@@ -1,0 +1,58 @@
+# ---- Node / 前端 ----
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+.eslintcache
+
+# ---- Tauri / Rust ----
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+**/*.rs.bk
+
+# ---- Python / uv ----
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# ---- 运行时数据（不进仓库） ----
+server/var/
+!server/var/.gitkeep
+# 测试用的 data_dir，测试跑完会留分片残留
+server/var_test/
+data/
+storage/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.local
+
+# ---- 大文件：真实样板资料不入库 ----
+# 参考解析结果里含材料全文，等同于一份副本，一并排除
+server/fixtures/*.pdf
+server/fixtures/*.docx
+server/fixtures/*.jpg
+server/fixtures/*.png
+server/fixtures/*.json
+!server/fixtures/README.md
+
+# ---- 备份产物 ----
+backup/
+*.sql
+*.sql.gz
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+desktop.ini

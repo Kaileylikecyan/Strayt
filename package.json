@@ -1,0 +1,23 @@
+{
+  "name": "strayt-client",
+  "private": true,
+  "version": "0.1.0",
+  "description": "学习工作台 Strayt 客户端（瘦客户端：共享包 + 响应式网页 / Tauri 桌面端）",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "check:tokens": "node scripts/check-tokens.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build -w @strayt/web",
+    "gen:api": "npm run gen -w @strayt/api-client"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@strayt/sync-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "弱同步引擎（架构红线 6）：打开全量拉取覆盖 snapshot、离线写队列、联网按 client_ts 顺序重放、冲突由服务端 LWW(updated_at) 裁决。",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3",
+    "vitest": "^3.0.0"
+  }
+}

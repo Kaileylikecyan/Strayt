@@ -1,0 +1,30 @@
+{
+  "name": "@strayt/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "组件层：只读 Design Token（AGENTS.md §4 门禁扫描对象），页面层基于它搭界面。",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@strayt/tokens": "*",
+    "antd": "^5.22.0"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "~5.8.3"
+  }
+}

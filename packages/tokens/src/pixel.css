@@ -1,0 +1,73 @@
+/*
+ * 像素风 CSS 覆盖层（AGENTS.md §4：独立于现代简约，与 modern.ts 互不 import）。
+ *
+ * 只在 html[data-strayt-theme="pixel"] 下生效。样式字面量集中在本文件，
+ * 组件层 / 页面层不重复书写。
+ */
+
+html[data-strayt-theme="pixel"] body {
+  text-rendering: optimizeSpeed;
+  letter-spacing: 0.02em;
+}
+
+/* 所有圆角强行切方（与 borderRadius 0 双保险：antd 内部若干组件仍有内联圆角） */
+html[data-strayt-theme="pixel"] * {
+  border-radius: 0 !important;
+}
+
+/* 卡片/弹层/列表项：粗边 + 硬投影，屏幕感 */
+html[data-strayt-theme="pixel"] .ant-card,
+html[data-strayt-theme="pixel"] .ant-modal-content,
+html[data-strayt-theme="pixel"] .ant-drawer-content,
+html[data-strayt-theme="pixel"] .ant-popover-inner,
+html[data-strayt-theme="pixel"] .ant-dropdown-menu,
+html[data-strayt-theme="pixel"] .ant-table-container {
+  box-shadow: 4px 4px 0 rgba(26, 19, 8, 0.28);
+}
+
+/* 按钮：方块惯性，可点的东西都要看起来能砸一下 */
+html[data-strayt-theme="pixel"] .ant-btn {
+  box-shadow: 3px 3px 0 rgba(26, 19, 8, 0.3);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+html[data-strayt-theme="pixel"] .ant-btn:active {
+  box-shadow: 1px 1px 0 rgba(26, 19, 8, 0.3);
+  transform: translate(2px, 2px);
+}
+
+/* 标签/统计徽标做成贴纸感 */
+html[data-strayt-theme="pixel"] .ant-tag,
+html[data-strayt-theme="pixel"] .ant-badge {
+  box-shadow: 2px 2px 0 rgba(26, 19, 8, 0.25);
+}
+
+/* 分割线加粗 */
+html[data-strayt-theme="pixel"] .ant-divider {
+  border-width: 3px;
+}
+
+/* 表格表头像游戏里的 HUD */
+html[data-strayt-theme="pixel"] .ant-table-thead > tr > th {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* 遮罩图层保持不透明像素块（背诵舱遮罩用） */
+html[data-strayt-theme="pixel"] .strayt-mask {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(26, 19, 8, 0.9),
+    rgba(26, 19, 8, 0.9) 2px,
+    rgba(26, 19, 8, 0.75) 2px,
+    rgba(26, 19, 8, 0.75) 4px
+  );
+}
+
+/* Tabs 下划线块状化 */
+html[data-strayt-theme="pixel"] .ant-tabs-ink-bar {
+  height: 4px;
+  border-radius: 0;
+}

@@ -1,0 +1,2606 @@
+# 本文件是**生成物**，不要手改。
+#
+#   uv run python scripts/export_openapi.py           # 重新生成
+#   uv run python scripts/export_openapi.py --check   # 校验是否过期（CI 用）
+#
+# 客户端类型由 packages/api-client 消费，改了服务端接口就重新导出。
+components:
+  schemas:
+    ApiKeyIn:
+      properties:
+        label:
+          default: ''
+          maxLength: 64
+          title: Label
+          type: string
+        provider:
+          enum:
+          - openai
+          - deepseek
+          - moonshot
+          - qwen
+          - doubao
+          - glm
+          - openai_compatible
+          title: Provider
+          type: string
+        secret:
+          maxLength: 512
+          minLength: 8
+          title: Secret
+          type: string
+      required:
+      - provider
+      - secret
+      title: ApiKeyIn
+      type: object
+    ApiKeyOut:
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        enabled:
+          title: Enabled
+          type: boolean
+        id:
+          title: Id
+          type: string
+        label:
+          title: Label
+          type: string
+        last_test_json:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Last Test Json
+        provider:
+          title: Provider
+          type: string
+        secret_mask:
+          title: Secret Mask
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - provider
+      - label
+      - secret_mask
+      - enabled
+      - created_at
+      - updated_at
+      title: ApiKeyOut
+      type: object
+    ApiKeyProbeIn:
+      description: 不落库的试连：用户刚粘贴 Key 时先试，避免存一堆废 Key。
+      properties:
+        model:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Model
+        provider:
+          enum:
+          - openai
+          - deepseek
+          - moonshot
+          - qwen
+          - doubao
+          - glm
+          - openai_compatible
+          title: Provider
+          type: string
+        secret:
+          maxLength: 512
+          minLength: 8
+          title: Secret
+          type: string
+      required:
+      - provider
+      - secret
+      title: ApiKeyProbeIn
+      type: object
+    BatchIn:
+      properties:
+        ops:
+          items:
+            $ref: '#/components/schemas/OpIn'
+          maxItems: 200
+          title: Ops
+          type: array
+      required:
+      - ops
+      title: BatchIn
+      type: object
+    BatchOut:
+      properties:
+        results:
+          items:
+            $ref: '#/components/schemas/OpResult'
+          title: Results
+          type: array
+        server_time:
+          format: date-time
+          title: Server Time
+          type: string
+      required:
+      - results
+      - server_time
+      title: BatchOut
+      type: object
+    Body_upload_direct_api_v1_files_post:
+      properties:
+        file:
+          contentMediaType: application/octet-stream
+          title: File
+          type: string
+      required:
+      - file
+      title: Body_upload_direct_api_v1_files_post
+      type: object
+    CategoryMasteryOut:
+      properties:
+        category_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category Id
+        mid:
+          title: Mid
+          type: integer
+        name:
+          title: Name
+          type: string
+        'no':
+          title: 'No'
+          type: integer
+        total:
+          title: Total
+          type: integer
+        'yes':
+          title: 'Yes'
+          type: integer
+      required:
+      - category_id
+      - name
+      - total
+      - 'no'
+      - mid
+      - 'yes'
+      title: CategoryMasteryOut
+      type: object
+    CheckinIn:
+      properties:
+        date:
+          format: date
+          title: Date
+          type: string
+        items:
+          items:
+            type: string
+          title: Items
+          type: array
+      required:
+      - date
+      title: CheckinIn
+      type: object
+    CheckinOut:
+      properties:
+        date:
+          format: date
+          title: Date
+          type: string
+        items_json:
+          items:
+            type: string
+          title: Items Json
+          type: array
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - date
+      - items_json
+      - updated_at
+      title: CheckinOut
+      type: object
+    FileOut:
+      properties:
+        deleted_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Deleted At
+        id:
+          title: Id
+          type: string
+        orig_name:
+          title: Orig Name
+          type: string
+        page_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Page Count
+        parse_channel:
+          enum:
+          - text
+          - vision
+          title: Parse Channel
+          type: string
+        project_id:
+          title: Project Id
+          type: string
+        sha256:
+          title: Sha256
+          type: string
+        size:
+          title: Size
+          type: integer
+        uploaded_at:
+          format: date-time
+          title: Uploaded At
+          type: string
+      required:
+      - id
+      - project_id
+      - orig_name
+      - sha256
+      - size
+      - parse_channel
+      - uploaded_at
+      title: FileOut
+      type: object
+    FlashcardGenOut:
+      properties:
+        created:
+          title: Created
+          type: integer
+        ok:
+          title: Ok
+          type: boolean
+        skipped:
+          title: Skipped
+          type: integer
+      required:
+      - ok
+      - created
+      - skipped
+      title: FlashcardGenOut
+      type: object
+    FlashcardOut:
+      properties:
+        answer:
+          title: Answer
+          type: string
+        category_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category Id
+        id:
+          title: Id
+          type: string
+        mastery:
+          title: Mastery
+          type: string
+        node_id:
+          title: Node Id
+          type: string
+        page:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Page
+        question:
+          title: Question
+          type: string
+      required:
+      - id
+      - node_id
+      - question
+      - answer
+      - page
+      - category_id
+      - mastery
+      title: FlashcardOut
+      type: object
+    FlashcardResultIn:
+      properties:
+        correct:
+          title: Correct
+          type: boolean
+      required:
+      - correct
+      title: FlashcardResultIn
+      type: object
+    FlashcardResultOut:
+      properties:
+        flashcard_id:
+          title: Flashcard Id
+          type: string
+        node_id:
+          title: Node Id
+          type: string
+        node_mastery:
+          title: Node Mastery
+          type: string
+      required:
+      - flashcard_id
+      - node_id
+      - node_mastery
+      title: FlashcardResultOut
+      type: object
+    GoalIn:
+      properties:
+        exam_date:
+          format: date
+          title: Exam Date
+          type: string
+      required:
+      - exam_date
+      title: GoalIn
+      type: object
+    GoalOut:
+      properties:
+        exam_date:
+          format: date
+          title: Exam Date
+          type: string
+        id:
+          title: Id
+          type: string
+        project_id:
+          title: Project Id
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - project_id
+      - exam_date
+      - updated_at
+      title: GoalOut
+      type: object
+    GraphConfirmIn:
+      description: 预览确认时的三种调整：删误抽 / 调分类 / 改内容。
+      properties:
+        delete_keys:
+          items:
+            type: string
+          title: Delete Keys
+          type: array
+        edits:
+          additionalProperties:
+            $ref: '#/components/schemas/NodeEdit'
+          title: Edits
+          type: object
+        reassign:
+          additionalProperties:
+            type: string
+          title: Reassign
+          type: object
+      title: GraphConfirmIn
+      type: object
+    GraphConfirmOut:
+      properties:
+        category_count:
+          title: Category Count
+          type: integer
+        edge_count:
+          title: Edge Count
+          type: integer
+        edited_nodes:
+          title: Edited Nodes
+          type: integer
+        node_count:
+          title: Node Count
+          type: integer
+        ok:
+          title: Ok
+          type: boolean
+        reason:
+          title: Reason
+          type: string
+        warnings:
+          items:
+            type: string
+          title: Warnings
+          type: array
+      required:
+      - ok
+      - reason
+      - node_count
+      - category_count
+      - edge_count
+      - edited_nodes
+      title: GraphConfirmOut
+      type: object
+    GraphDraftOut:
+      properties:
+        draft:
+          additionalProperties: true
+          title: Draft
+          type: object
+        job_id:
+          title: Job Id
+          type: string
+        status:
+          title: Status
+          type: string
+      required:
+      - job_id
+      - status
+      - draft
+      title: GraphDraftOut
+      type: object
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          title: Detail
+          type: array
+      title: HTTPValidationError
+      type: object
+    JobCreate:
+      description: 新建加工任务。``recite_align`` 背诵对齐；``graph_extract`` 图谱抽取。
+      properties:
+        file_id:
+          title: File Id
+          type: string
+        overwrite:
+          default: false
+          title: Overwrite
+          type: boolean
+        project_id:
+          title: Project Id
+          type: string
+        type:
+          default: recite_align
+          enum:
+          - recite_align
+          - graph_extract
+          title: Type
+          type: string
+      required:
+      - project_id
+      - file_id
+      title: JobCreate
+      type: object
+    JobOut:
+      properties:
+        checkpoint_json:
+          additionalProperties: true
+          title: Checkpoint Json
+          type: object
+        cost_estimate_json:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Cost Estimate Json
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        done_units:
+          title: Done Units
+          type: integer
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+        failed_units_json:
+          items: {}
+          title: Failed Units Json
+          type: array
+        heartbeat_at:
+          format: date-time
+          title: Heartbeat At
+          type: string
+        id:
+          title: Id
+          type: string
+        progress:
+          title: Progress
+          type: integer
+        project_id:
+          title: Project Id
+          type: string
+        status:
+          enum:
+          - queued
+          - running
+          - success
+          - failed
+          - cancelled
+          - interrupted
+          title: Status
+          type: string
+        tokens_used:
+          title: Tokens Used
+          type: integer
+        total_units:
+          title: Total Units
+          type: integer
+        type:
+          title: Type
+          type: string
+        units_json:
+          items: {}
+          title: Units Json
+          type: array
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - project_id
+      - type
+      - status
+      - progress
+      - total_units
+      - done_units
+      - failed_units_json
+      - checkpoint_json
+      - tokens_used
+      - units_json
+      - created_at
+      - updated_at
+      - heartbeat_at
+      title: JobOut
+      type: object
+    KvIn:
+      properties:
+        value:
+          title: Value
+          type: string
+      required:
+      - value
+      title: KvIn
+      type: object
+    MasteryIn:
+      properties:
+        mastery:
+          enum:
+          - 'no'
+          - mid
+          - 'yes'
+          title: Mastery
+          type: string
+      required:
+      - mastery
+      title: MasteryIn
+      type: object
+    MasteryStatsOut:
+      properties:
+        by_category:
+          items:
+            $ref: '#/components/schemas/CategoryMasteryOut'
+          title: By Category
+          type: array
+        by_mastery:
+          additionalProperties:
+            type: integer
+          title: By Mastery
+          type: object
+        mastery_ratio:
+          title: Mastery Ratio
+          type: number
+        project_id:
+          title: Project Id
+          type: string
+        total:
+          title: Total
+          type: integer
+      required:
+      - project_id
+      - total
+      - by_mastery
+      - mastery_ratio
+      - by_category
+      title: MasteryStatsOut
+      type: object
+    ModelProfileIn:
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          title: Name
+          type: string
+        text_key_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text Key Id
+        text_model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text Model
+        vision_key_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Vision Key Id
+        vision_model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Vision Model
+      required:
+      - name
+      title: ModelProfileIn
+      type: object
+    ModelProfileOut:
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+        text_model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text Model
+        text_provider_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text Provider Id
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        vision_model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Vision Model
+        vision_provider_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Vision Provider Id
+      required:
+      - id
+      - name
+      - text_provider_id
+      - text_model
+      - vision_provider_id
+      - vision_model
+      - created_at
+      - updated_at
+      title: ModelProfileOut
+      type: object
+    NodeEdit:
+      description: 预览确认时对一个节点的有限手动编辑（F14）。
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary
+      title: NodeEdit
+      type: object
+    NodeMasteryOut:
+      properties:
+        id:
+          title: Id
+          type: string
+        mastery:
+          title: Mastery
+          type: string
+        updated_at:
+          title: Updated At
+          type: string
+      required:
+      - id
+      - mastery
+      - updated_at
+      title: NodeMasteryOut
+      type: object
+    OpIn:
+      description: 一条写队列操作。
+      properties:
+        client_ts:
+          description: 客户端写入时刻（UTC naive）
+          format: date-time
+          title: Client Ts
+          type: string
+        entity:
+          description: 可写实体：piece_progress, pair_edit, checkin, plan, goal, node_mastery
+          title: Entity
+          type: string
+        entity_id:
+          title: Entity Id
+          type: string
+        op_id:
+          description: 幂等键，客户端生成
+          maxLength: 64
+          minLength: 1
+          title: Op Id
+          type: string
+        patch:
+          additionalProperties: true
+          title: Patch
+          type: object
+      required:
+      - op_id
+      - entity
+      - entity_id
+      - client_ts
+      title: OpIn
+      type: object
+    OpResult:
+      properties:
+        op_id:
+          title: Op Id
+          type: string
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        server_updated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Server Updated At
+        status:
+          enum:
+          - applied
+          - skipped
+          - conflict
+          - error
+          title: Status
+          type: string
+      required:
+      - op_id
+      - status
+      title: OpResult
+      type: object
+    PairOut:
+      properties:
+        en:
+          title: En
+          type: string
+        loc_page:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Loc Page
+        manually_edited:
+          title: Manually Edited
+          type: boolean
+        needs_review:
+          title: Needs Review
+          type: boolean
+        pair_key:
+          title: Pair Key
+          type: string
+        seq:
+          title: Seq
+          type: integer
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        zh:
+          title: Zh
+          type: string
+      required:
+      - pair_key
+      - seq
+      - zh
+      - en
+      - needs_review
+      - manually_edited
+      - updated_at
+      title: PairOut
+      type: object
+    PieceOut:
+      properties:
+        align_mode:
+          enum:
+          - llm
+          - regular
+          title: Align Mode
+          type: string
+        id:
+          title: Id
+          type: string
+        last_pos:
+          title: Last Pos
+          type: integer
+        pair_count:
+          default: 0
+          title: Pair Count
+          type: integer
+        project_id:
+          title: Project Id
+          type: string
+        recited:
+          title: Recited
+          type: boolean
+        sort_order:
+          title: Sort Order
+          type: integer
+        title:
+          title: Title
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - project_id
+      - title
+      - align_mode
+      - recited
+      - last_pos
+      - sort_order
+      - updated_at
+      title: PieceOut
+      type: object
+    PieceProgressIn:
+      description: 背诵舱进度。客户端可离线写，联网后随写队列上传。
+      properties:
+        client_ts:
+          format: date-time
+          title: Client Ts
+          type: string
+        last_pos:
+          minimum: 0.0
+          title: Last Pos
+          type: integer
+        recited:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Recited
+      required:
+      - last_pos
+      - client_ts
+      title: PieceProgressIn
+      type: object
+    PlanListOut:
+      description: 阶段计划列表项：在 PlanOut 上附加相对参考日的派生字段。
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        days_until:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Days Until
+        due_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Due Date
+        id:
+          title: Id
+          type: string
+        overdue:
+          default: false
+          title: Overdue
+          type: boolean
+        project_id:
+          title: Project Id
+          type: string
+        sort_order:
+          title: Sort Order
+          type: integer
+        status:
+          enum:
+          - todo
+          - doing
+          - done
+          title: Status
+          type: string
+        target_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Id
+        target_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Type
+        title:
+          title: Title
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - project_id
+      - title
+      - due_date
+      - status
+      - target_type
+      - target_id
+      - sort_order
+      - created_at
+      - updated_at
+      title: PlanListOut
+      type: object
+    ProjectCreate:
+      properties:
+        api_profile_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Profile Id
+        name:
+          maxLength: 120
+          minLength: 1
+          title: Name
+          type: string
+        type:
+          enum:
+          - graph
+          - recite
+          title: Type
+          type: string
+      required:
+      - name
+      - type
+      title: ProjectCreate
+      type: object
+    ProjectOut:
+      properties:
+        api_profile_json:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Api Profile Json
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        deleted_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Deleted At
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+        type:
+          enum:
+          - graph
+          - recite
+          title: Type
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - name
+      - type
+      - created_at
+      - updated_at
+      title: ProjectOut
+      type: object
+    UploadSessionCreate:
+      description: 客户端先声明文件指纹，服务端据此判断走直传还是分块。
+      properties:
+        orig_name:
+          maxLength: 255
+          minLength: 1
+          title: Orig Name
+          type: string
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+        size:
+          minimum: 1.0
+          title: Size
+          type: integer
+      required:
+      - orig_name
+      - size
+      - sha256
+      title: UploadSessionCreate
+      type: object
+    UploadSessionOut:
+      properties:
+        chunk_size:
+          title: Chunk Size
+          type: integer
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          title: Id
+          type: string
+        orig_name:
+          title: Orig Name
+          type: string
+        project_id:
+          title: Project Id
+          type: string
+        received_json:
+          additionalProperties: true
+          title: Received Json
+          type: object
+        sha256:
+          title: Sha256
+          type: string
+        size:
+          title: Size
+          type: integer
+        status:
+          enum:
+          - pending
+          - complete
+          - aborted
+          title: Status
+          type: string
+        total_chunks:
+          title: Total Chunks
+          type: integer
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - project_id
+      - orig_name
+      - size
+      - sha256
+      - chunk_size
+      - total_chunks
+      - received_json
+      - status
+      - created_at
+      - updated_at
+      title: UploadSessionOut
+      type: object
+    ValidationError:
+      properties:
+        ctx:
+          title: Context
+          type: object
+        input:
+          title: Input
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          title: Location
+          type: array
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      type: object
+info:
+  description: '学习工作台 Strayt 服务端。
+
+
+    单用户免账号：所有 `/api/v1` 端点需 `Authorization: Bearer <访问令牌>`。
+
+    唯一豁免是 `/health`（存活探针）。
+
+
+    错误体统一为 `{ "error": { "code", "message", "detail?" } }`，`code` 是稳定契约，客户端据此分支。'
+  title: Strayt 学习工作台
+  version: 0.1.0
+openapi: 3.1.0
+paths:
+  /api/v1/checkins:
+    put:
+      operationId: put_checkin_api_v1_checkins_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckinIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckinOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 打卡（同日覆盖）
+      tags:
+      - 背诵舱 / 打卡
+  /api/v1/checkins/{day}:
+    get:
+      operationId: get_checkin_api_v1_checkins__day__get
+      parameters:
+      - in: path
+        name: day
+        required: true
+        schema:
+          format: date
+          title: Day
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckinOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 查某天打卡
+      tags:
+      - 背诵舱 / 打卡
+  /api/v1/export/snapshot:
+    get:
+      operationId: export_snapshot_api_v1_export_snapshot_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Export Snapshot Api V1 Export Snapshot Get
+                type: object
+          description: Successful Response
+      summary: 全部项目数据一键导出 JSON 快照
+      tags:
+      - 数据导出
+  /api/v1/files:
+    get:
+      operationId: list_files_api_v1_files_get
+      parameters:
+      - in: query
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/FileOut'
+                title: Response List Files Api V1 Files Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 项目资料列表
+      tags:
+      - 文件
+    post:
+      operationId: upload_direct_api_v1_files_post
+      parameters:
+      - in: query
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_direct_api_v1_files_post'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 直传上传（≤50MB）
+      tags:
+      - 文件
+  /api/v1/files/{file_id}:
+    delete:
+      operationId: delete_file_api_v1_files__file_id__delete
+      parameters:
+      - in: path
+        name: file_id
+        required: true
+        schema:
+          title: File Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 软删文件（实体移入回收站）
+      tags:
+      - 文件
+  /api/v1/files/{file_id}/raw:
+    get:
+      operationId: download_raw_api_v1_files__file_id__raw_get
+      parameters:
+      - in: path
+        name: file_id
+        required: true
+        schema:
+          title: File Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 下载原始文件（出处回看二期用）
+      tags:
+      - 文件
+  /api/v1/flashcards/{flashcard_id}/result:
+    post:
+      description: 答对/答错推进一档掌握度（no↔mid↔yes），两端钳位。
+      operationId: post_flashcard_result_api_v1_flashcards__flashcard_id__result_post
+      parameters:
+      - in: path
+        name: flashcard_id
+        required: true
+        schema:
+          title: Flashcard Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlashcardResultIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlashcardResultOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 自测结果回写
+      tags:
+      - 闪卡自测
+  /api/v1/jobs:
+    get:
+      operationId: list_jobs_api_v1_jobs_get
+      parameters:
+      - in: query
+        name: project_id
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^(queued|running|success|failed|cancelled|interrupted)$
+            type: string
+          - type: 'null'
+          title: Status
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 200
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/JobOut'
+                title: Response List Jobs Api V1 Jobs Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 任务列表
+      tags:
+      - 加工任务
+    post:
+      description: '入队并立即在服务端后台开跑，客户端可以关窗。
+
+
+        任务表里同时写 ``file_id``，断点续跑靠它找回要加工的文件。
+
+        图谱任务在创建时就校验 LLM 配置：没有模型就没有知识点，与其建一个
+
+        必然会失败的活，不如一开始就拦住并说明原因。'
+      operationId: create_job_api_v1_jobs_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 新建加工任务并开跑
+      tags:
+      - 加工任务
+  /api/v1/jobs/{job_id}:
+    get:
+      operationId: get_job_api_v1_jobs__job_id__get
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 任务详情（含逐章进度与断点）
+      tags:
+      - 加工任务
+  /api/v1/jobs/{job_id}/cancel:
+    post:
+      operationId: cancel_job_api_v1_jobs__job_id__cancel_post
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 取消排队中、运行中或已中断的任务
+      tags:
+      - 加工任务
+  /api/v1/jobs/{job_id}/graph-confirm:
+    post:
+      description: 把草稿（带手动调整）一次性原子落库，覆盖项目旧图谱。
+      operationId: confirm_graph_api_v1_jobs__job_id__graph_confirm_post
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphConfirmIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphConfirmOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 预览确认并入库
+      tags:
+      - 知识图谱
+  /api/v1/jobs/{job_id}/graph-draft:
+    get:
+      description: 抽取任务完成后的预览草稿（尚未落正式表）。
+      operationId: get_graph_draft_api_v1_jobs__job_id__graph_draft_get
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphDraftOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 阅读取预览草稿
+      tags:
+      - 知识图谱
+  /api/v1/jobs/{job_id}/resume:
+    post:
+      operationId: resume_job_api_v1_jobs__job_id__resume_post
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 断点续跑失败或已中断的任务
+      tags:
+      - 加工任务
+  /api/v1/nodes/{node_id}/mastery:
+    put:
+      description: 直接写掌握度（在线路径）。离线走弱同步 ``node_mastery`` 实体。
+      operationId: put_node_mastery_api_v1_nodes__node_id__mastery_put
+      parameters:
+      - in: path
+        name: node_id
+        required: true
+        schema:
+          title: Node Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MasteryIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeMasteryOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 设置节点掌握度
+      tags:
+      - 知识图谱
+  /api/v1/plans:
+    get:
+      operationId: list_plans_api_v1_plans_get
+      parameters:
+      - in: query
+        name: project_id
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^(todo|doing|done)$
+            type: string
+          - type: 'null'
+          title: Status
+      - description: 排序参考日（used for 逾期判定），默认今天
+        in: query
+        name: ref_date
+        required: false
+        schema:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          description: 排序参考日（used for 逾期判定），默认今天
+          title: Ref Date
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/PlanListOut'
+                title: Response List Plans Api V1 Plans Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 阶段计划列表
+      tags:
+      - 学习路径
+  /api/v1/plans/daily:
+    get:
+      operationId: daily_todos_api_v1_plans_daily_get
+      parameters:
+      - description: 待办日，默认今天
+        in: query
+        name: day
+        required: false
+        schema:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          description: 待办日，默认今天
+          title: Day
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Daily Todos Api V1 Plans Daily Get
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 每日待办聚合
+      tags:
+      - 学习路径
+  /api/v1/projects:
+    get:
+      operationId: list_projects_api_v1_projects_get
+      parameters:
+      - description: 回收站视图：只列已删项目
+        in: query
+        name: include_deleted
+        required: false
+        schema:
+          default: false
+          description: 回收站视图：只列已删项目
+          title: Include Deleted
+          type: boolean
+      - in: query
+        name: type
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^(graph|recite)$
+            type: string
+          - type: 'null'
+          title: Type
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ProjectOut'
+                title: Response List Projects Api V1 Projects Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 项目列表
+      tags:
+      - 项目
+    post:
+      operationId: create_project_api_v1_projects_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 新建项目
+      tags:
+      - 项目
+  /api/v1/projects/{project_id}:
+    delete:
+      operationId: delete_project_api_v1_projects__project_id__delete
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 软删进回收站
+      tags:
+      - 项目
+    get:
+      operationId: get_project_api_v1_projects__project_id__get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 项目详情
+      tags:
+      - 项目
+    patch:
+      operationId: rename_project_api_v1_projects__project_id__patch
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: name
+        required: true
+        schema:
+          title: Name
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 改名（类型不可改）
+      tags:
+      - 项目
+  /api/v1/projects/{project_id}/flashcards:
+    get:
+      description: 按项目取卡组，可只取某掌握度（自测优先复习弱项）。
+      operationId: list_flashcards_api_v1_projects__project_id__flashcards_get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: mastery
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - 'no'
+            - mid
+            - 'yes'
+            type: string
+          - type: 'null'
+          title: Mastery
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/FlashcardOut'
+                title: Response List Flashcards Api V1 Projects  Project Id  Flashcards Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 闪卡卡组
+      tags:
+      - 知识图谱
+  /api/v1/projects/{project_id}/flashcards/generate:
+    post:
+      description: '从已确认节点确定性重建整副卡组：question=名称，answer=概要/摘录。
+
+
+        不调 LLM —— 概要/摘录在抽取时已限"仅基于给定材料"，这里复用它。
+
+        同一事务先清旧卡再全量插入（与图谱擦除重建同语义）。'
+      operationId: generate_flashcards_api_v1_projects__project_id__flashcards_generate_post
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlashcardGenOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 按当前图谱重建闪卡（幂等）
+      tags:
+      - 知识图谱
+  /api/v1/projects/{project_id}/goal:
+    get:
+      operationId: get_goal_api_v1_projects__project_id__goal_get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 考试目标
+      tags:
+      - 项目
+    put:
+      operationId: put_goal_api_v1_projects__project_id__goal_put
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 设置考试目标
+      tags:
+      - 项目
+  /api/v1/projects/{project_id}/graph:
+    get:
+      description: 确认入库后的完整图谱：分类 → 节点（带引文）→ 关联。
+      operationId: get_graph_api_v1_projects__project_id__graph_get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Get Graph Api V1 Projects  Project Id  Graph Get
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 图谱全量拉取
+      tags:
+      - 知识图谱
+  /api/v1/projects/{project_id}/mastery-stats:
+    get:
+      description: 按掌握度三级与一级分类做聚合，供图谱视图着色与进度概览。
+      operationId: get_mastery_stats_api_v1_projects__project_id__mastery_stats_get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MasteryStatsOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 掌握度统计
+      tags:
+      - 知识图谱
+  /api/v1/projects/{project_id}/pieces:
+    get:
+      operationId: list_pieces_api_v1_projects__project_id__pieces_get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/PieceOut'
+                title: Response List Pieces Api V1 Projects  Project Id  Pieces Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 篇目列表
+      tags:
+      - 背诵舱 / 打卡
+  /api/v1/projects/{project_id}/pieces/{piece_id}/pairs:
+    get:
+      operationId: list_pairs_api_v1_projects__project_id__pieces__piece_id__pairs_get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: piece_id
+        required: true
+        schema:
+          title: Piece Id
+          type: string
+      - description: 续传起点
+        in: query
+        name: from_seq
+        required: false
+        schema:
+          default: 0
+          description: 续传起点
+          minimum: 0
+          title: From Seq
+          type: integer
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 500
+          maximum: 2000
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/PairOut'
+                title: Response List Pairs Api V1 Projects  Project Id  Pieces  Piece Id  Pairs Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 取段落对（背诵舱数据源）
+      tags:
+      - 背诵舱 / 打卡
+  /api/v1/projects/{project_id}/pieces/{piece_id}/progress:
+    put:
+      operationId: put_progress_api_v1_projects__project_id__pieces__piece_id__progress_put
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: piece_id
+        required: true
+        schema:
+          title: Piece Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PieceProgressIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PieceOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 上报背诵进度
+      tags:
+      - 背诵舱 / 打卡
+  /api/v1/projects/{project_id}/restore:
+    post:
+      operationId: restore_project_api_v1_projects__project_id__restore_post
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 从回收站恢复
+      tags:
+      - 项目
+  /api/v1/settings/api-keys:
+    get:
+      operationId: list_keys_api_v1_settings_api_keys_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ApiKeyOut'
+                title: Response List Keys Api V1 Settings Api Keys Get
+                type: array
+          description: Successful Response
+      summary: Key 列表（只含掩码）
+      tags:
+      - 设置
+    post:
+      operationId: create_key_api_v1_settings_api_keys_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiKeyIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 添加 Key
+      tags:
+      - 设置
+  /api/v1/settings/api-keys/probe:
+    post:
+      operationId: probe_key_api_v1_settings_api_keys_probe_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiKeyProbeIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Probe Key Api V1 Settings Api Keys Probe Post
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 试连（不落库，≤10s）
+      tags:
+      - 设置
+  /api/v1/settings/api-keys/{key_id}:
+    delete:
+      operationId: delete_key_api_v1_settings_api_keys__key_id__delete
+      parameters:
+      - in: path
+        name: key_id
+        required: true
+        schema:
+          title: Key Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 删除 Key
+      tags:
+      - 设置
+  /api/v1/settings/api-keys/{key_id}/test:
+    post:
+      description: F6 硬要求：10s 内返回成功/失败 + 原因（Key 错误 / 网络不通 / 额度不足）。
+      operationId: test_key_api_v1_settings_api_keys__key_id__test_post
+      parameters:
+      - in: path
+        name: key_id
+        required: true
+        schema:
+          title: Key Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 连通性测试（≤10s，F6）
+      tags:
+      - 设置
+  /api/v1/settings/kv/{key}:
+    get:
+      operationId: get_kv_api_v1_settings_kv__key__get
+      parameters:
+      - in: path
+        name: key
+        required: true
+        schema:
+          title: Key
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Get Kv Api V1 Settings Kv  Key  Get
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 读 KV
+      tags:
+      - 设置
+    put:
+      operationId: put_kv_api_v1_settings_kv__key__put
+      parameters:
+      - in: path
+        name: key
+        required: true
+        schema:
+          title: Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KvIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Put Kv Api V1 Settings Kv  Key  Put
+                type: object
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 写 KV
+      tags:
+      - 设置
+  /api/v1/settings/model-profiles:
+    get:
+      operationId: list_profiles_api_v1_settings_model_profiles_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ModelProfileOut'
+                title: Response List Profiles Api V1 Settings Model Profiles Get
+                type: array
+          description: Successful Response
+      summary: 模型档案列表
+      tags:
+      - 设置
+    post:
+      operationId: create_profile_api_v1_settings_model_profiles_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelProfileIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelProfileOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 新建档案
+      tags:
+      - 设置
+  /api/v1/settings/model-profiles/{profile_id}:
+    delete:
+      operationId: delete_profile_api_v1_settings_model_profiles__profile_id__delete
+      parameters:
+      - in: path
+        name: profile_id
+        required: true
+        schema:
+          title: Profile Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 删除档案
+      tags:
+      - 设置
+  /api/v1/settings/providers:
+    get:
+      operationId: list_providers_api_v1_settings_providers_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  additionalProperties: true
+                  type: object
+                title: Response List Providers Api V1 Settings Providers Get
+                type: array
+          description: Successful Response
+      summary: 已接入的服务商与模型（给设置页下拉框）
+      tags:
+      - 设置
+  /api/v1/sync/batch:
+    post:
+      operationId: push_batch_api_v1_sync_batch_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 重放写队列
+      tags:
+      - 弱同步
+  /api/v1/sync/bootstrap:
+    get:
+      operationId: bootstrap_api_v1_sync_bootstrap_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Bootstrap Api V1 Sync Bootstrap Get
+                type: object
+          description: Successful Response
+      summary: 全量快照（打开应用时一次）
+      tags:
+      - 弱同步
+  /api/v1/upload-sessions:
+    post:
+      operationId: create_session_api_v1_upload_sessions_post
+      parameters:
+      - in: query
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadSessionCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 声明分块上传会话
+      tags:
+      - 文件
+  /api/v1/upload-sessions/{session_id}:
+    delete:
+      operationId: abort_session_api_v1_upload_sessions__session_id__delete
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 放弃会话并清理分片
+      tags:
+      - 文件
+    get:
+      operationId: get_session_api_v1_upload_sessions__session_id__get
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 查询已收分块（续传依据）
+      tags:
+      - 文件
+  /api/v1/upload-sessions/{session_id}/chunks/{index}:
+    put:
+      operationId: put_chunk_api_v1_upload_sessions__session_id__chunks__index__put
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      - in: path
+        name: index
+        required: true
+        schema:
+          title: Index
+          type: integer
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 上传单个分块（可重复调用，幂等覆盖）
+      tags:
+      - 文件
+  /api/v1/upload-sessions/{session_id}/complete:
+    post:
+      operationId: complete_session_api_v1_upload_sessions__session_id__complete_post
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 合并分块并校验 SHA-256
+      tags:
+      - 文件
+  /health:
+    get:
+      operationId: health_health_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Health Health Get
+                type: object
+          description: Successful Response
+      summary: 存活探针（免鉴权）
+      tags:
+      - 运维

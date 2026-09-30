@@ -1,0 +1,46 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--tok-colorBgLayout);
+  color: var(--tok-colorText);
+  font-family: var(--tok-fontFamily);
+}
+
+.strayt-app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.strayt-main {
+  flex: 1;
+  padding: var(--tok-spaceMd-px);
+  width: 100%;
+  max-width: 100%;
+}
+
+.strayt-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tok-spaceSm-px);
+  flex-wrap: wrap;
+}
+
+.strayt-muted {
+  color: var(--tok-colorText);
+  opacity: 0.65;
+  font-size: var(--tok-fontSize-px);
+}
+
+.strayt-grow {
+  flex: 1;
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@strayt/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "响应式网页（轻交互：项目列表/背诵舱/打卡/设置）。服务端为唯一数据源，一切经 REST API。",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.5.0",
+    "@strayt/api-client": "*",
+    "@strayt/sync-engine": "*",
+    "@strayt/tokens": "*",
+    "@strayt/ui": "*",
+    "antd": "^5.22.0",
+    "dayjs": "^1.11.13",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.8.3",
+    "vite": "^6.2.0"
+  }
+}
