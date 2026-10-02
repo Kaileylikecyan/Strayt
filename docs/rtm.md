@@ -14,7 +14,7 @@
 
 > **当前整体状态**：服务端（`server/`）覆盖 F1、F4、F6、F7、F9、F10、F17、F20、F21
 > 的后端部分。**网页端（`apps/web`）已跑通主链路**：项目列表（含最近学习）、资料上传
-> （直传/分块续传）、加工任务（创建/轮询/取消/续跑/成本熔断展示）、**背诵舱（当前为四档旧实现，需求已改为三档 + 段落粒度 + 计时器，见 F19 与缺口 12）** + 手动改句、
+> （直传/分块续传）、加工任务（创建/轮询/取消/续跑/成本熔断展示）、**背诵舱（按句/按段粒度 + 三档模式 + 递进计时器）** + 手动改句、
 > 图谱（预览确认 / 图谱视图 / 闪卡 / 掌握度）、打卡热力、设置（API Key/模型档案/导出）、
 > 弱同步引擎 10 个单测。
 > **Tauri 桌面端（`apps/desktop`）仍空**：Rust/cargo 与 MSVC Build Tools 未装，
@@ -117,10 +117,10 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
 |---|---|---|---|---|
 | F17 | 加工执行：解析 → 中英对齐 → 入库 | ✅ | `app/jobs/engine.py` 全链路；`POST /jobs`、`/resume`；后台调度见 ADR-0008（绑主 loop + 启动回收孤儿任务）；扫描件显式 `NotImplementedError`。客户端 `apps/web` JobsPage：按项目/类型建任务、2.5s 轮询进度、取消、失败/中断续跑、显示加工单元与失败单元 | `test_jobs.py`、`test_api_jobs.py`、**`var_test/job_e2e.py`**、`scripts/smoke_http.py` |
 | F18 | 中英对齐双通道 + 手动微调 | ✅ | 通道 A `app/align/llm.py`、通道 B `app/align/regular.py`，自动选择已接；**写入通道**：弱同步 `pair_edit`，**按稳定 key `pair_key` 寻址**（客户端拿不到自增主键，服务端 `db.get` 落空时按 `pair_key` 兜底），可改 `zh`/`en`/`seq`，带 `manually_edited`；**拆分 / 合并**：`POST /pieces/{id}/pairs/split`（客户端算好两半，服务端换新 `pair_key` + 继承 `loc_page`）与 `/merge`（仅相邻，中文直拼英文空格连），两者都经 `_renumber_pairs` 把 `seq` 压回 0..n-1 稠密唯一；客户端 RecitePage 改句弹窗 + 复读确认 + **HTML5 拖拽排序** + 拆分/合并弹窗 | `test_align_llm.py`、`test_align.py`、`test_pairs_edit.py`、`test_sync.py::test_pair_edit_accepts_stable_pair_key`、`var_test/quality_e2e.py`、`scripts/smoke_http.py` |
-| F19 | 交错背诵舱：按句/按段粒度 + 三档模式 + 计时器 | 🟡 | **需求已定，实现待做**（见缺口 12 与 ADR-0012）。服务端现有段落对序列（`GET /pieces`、`/pairs`）与 `last_pos`/`recited` 落库已就绪；客户端 `apps/web` RecitePage **当前是四档旧实现**（对照阅读/中文提示/遮罩背诵/逐句递进），待改为：三档模式（对照阅读 / 遮罩背诵[提示语言 中文·英文·双语都遮] / 逐句递进[带计时器：开始背诵→到时自动揭示或手动「完成背诵」→再来一遍 / 背诵下一部分，下一单元需手动再点开始]）、粒度切换（按句 / 按段，记在每篇篇目上）、`last_pos` 仍记句序号因而切粒度不毁进度 | — |
-| F19.1 | 背诵单元粒度按句/按段（记篇目，可随时切） | 🔜 | 待做：`pairs.block_no` 迁移 + 管线透传版面块序号；粒度开关存客户端本地（按篇目 id 键，不落服务端）；`block_no` 缺失的旧篇目降级为按句并标注 | — |
-| F19.2 | 三档模式（原四档合并「中文提示」入「遮罩背诵」） | 🔜 | 待做：RecitePage 模式枚举与遮罩逻辑；遮罩揭示粒度跟随粒度设置 | — |
-| F19.3 | 背诵计时器（1/3/5 分钟或自定义，全局默认 + 本次临时改） | 🔜 | 待做：纯客户端会话态，不落库；时长默认值存 settings kv | — |
+| F19 | 交错背诵舱：按句/按段粒度 + 三档模式 + 计时器 | ✅ | 全部实现，见 ADR-0012。服务端 `pairs.block_no`（原文版面块归属）+ `apps/web` RecitePage 三档（对照阅读 / 遮罩背诵[中文·英文·双语都遮] / 逐句递进[带计时器]）+ 设置页计时默认时长。`last_pos` 仍记句序号，切粒度不毁进度 | `test_parse.py` / `test_jobs.py` / `test_persist.py` / `test_pairs_edit.py` / `apps/web/tests/reciteUnits.test.ts` |
+| F19.1 | 背诵单元粒度按句/按段（记篇目，可随时切） | ✅ | `pairs.block_no` 迁移 `c3e91a4b7d55` + 解析管线逐字符块表 + `attribute_blocks()` 归属（只在管线层做，通道内不碰）；粒度开关存客户端 localStorage 按篇目 id（不进弱同步）；`block_no` 缺失的旧篇目整体降级为按句并弹提示；`app/scripts/backfill_block_no.py` 可给旧数据纯机械回填（不碰 LLM） | 同上 |
+| F19.2 | 三档模式（原四档合并「中文提示」入「遮罩背诵」） | ✅ | `reciteUnits.ts` 的 `buildUnits()` 按连续 `block_no` 合成单元；遮罩揭示粒度跟随粒度设置；「逐句递进」只渲染当前单元 | `apps/web/tests/reciteUnits.test.ts`（18 例） |
+| F19.3 | 背诵计时器（1/3/5 分钟或自定义，全局默认 + 本次临时改） | ✅ | 纯客户端会话态 `idle → running → revealed`，不入库；到时自动揭示或点「完成背诵」提前揭示，揭示才推进 `last_pos`；默认时长存 settings KV `recite.timer_default_seconds`，设置页可改、单元前可临时改 | `apps/web/tests/reciteUnits.test.ts` |
 | F20 | 篇目管理：已背诵标记、进度 x/n、上次位置 | ✅ | `pieces.recited` / `last_pos`；`PUT /pieces/{id}/progress`；`sync` 的 `piece_progress` | `test_persist.py` |
 
 ## 6.7 学习数据与进度
@@ -252,7 +252,7 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
     `app/core/errors.py::jsonable_errors` 在 422 处理器里过一道（`Field(min_length=...)`
     这类约束失败不受影响，所以以前没暴露）。**新写校验器不用为此操心**，但别绕过它
     直接用 `exc.errors()`。
-12. **背诵舱要改三处口径，实现待做** —— 用户实测后提出：原文是一段段的，背诵舱却一句一句；
+12. ~~**背诵舱要改三处口径**~~ **已解决** —— 用户实测后提出：原文是一段段的，背诵舱却一句一句；
     「中文提示」与「遮罩背诵」行为重复；「逐句递进」缺计时。需求已定稿（产品说明文档 F19.1~F19.3），
     决策与理由见 [ADR-0012](adr/0012-recite-unit-granularity-and-timer.md)。三处口径：
     - **粒度不进对齐**：`pairs` 仍是句级原子，只另存 `block_no` 供展示时合成段落单元。
