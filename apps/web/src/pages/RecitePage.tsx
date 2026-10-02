@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Empty, Input, InputNumber, message, Modal, Segmented, Select, Spin, Switch, Tag } from "antd";
+import { Alert, Button, Dropdown, Empty, Input, message, Modal, Segmented, Select, Spin, Switch, Tag } from "antd";
 import {
   ArrowLeftOutlined,
+  DownOutlined,
   EditOutlined,
   MergeCellsOutlined,
   RedoOutlined,
@@ -19,6 +20,7 @@ import {
   formatCountdown,
   lastPosAfterReveal,
   paragraphUsable as allBlocksPresent,
+  parseClock,
   readGranularity,
   TIMER_FALLBACK_SEC,
   TIMER_MAX_SEC,
@@ -32,12 +34,18 @@ import {
 type Mode = "对照阅读" | "遮罩背诵" | "逐句递进";
 const MODES: Mode[] = ["对照阅读", "遮罩背诵", "逐句递进"];
 
-/** 提示语言：显示中文遮英文 / 显示英文遮中文 / 双语都遮（文档 F19.2）。 */
+/**
+ * 提示语言：背诵时露出哪一侧原文（文档 F19.2）。
+ *
+ * 原来写「显示中文遮英文 / 显示英文遮中文 / 双语都遮」——用「遮」描述被藏起来的那一侧，
+ * 是从代码里 `isMasked(unit, side)` 的角度写的，不是用户视角。用户关心的是
+ * 「我看得见的是什么」，所以一律改成正面表述。
+ */
 type HintLang = "zh" | "en" | "both";
 const HINT_LANGS: { value: HintLang; label: string }[] = [
-  { value: "zh", label: "显示中文遮英文" },
-  { value: "en", label: "显示英文遮中文" },
-  { value: "both", label: "双语都遮" },
+  { value: "zh", label: "显示中文" },
+  { value: "en", label: "显示英文" },
+  { value: "both", label: "都不显示" },
 ];
 
 /** 计时状态机：遮蔽 → 计时中 → 已揭示（文档 F19.3）。纯会话态，不入库。 */
@@ -100,6 +108,13 @@ export function RecitePage({ initialProjectId }: { initialProjectId?: string | n
   const [pairs, setPairs] = useState<PairOut[] | null>(null);
   const [loadingPieces, setLoadingPieces] = useState(false);
 
+  // snapshot 走 ref，不进下面的依赖：本 effect 的语义是「切到某项目时载入它的篇目」，
+  // 而 snapshot 每同步一次就换一个新对象。早前把它列进依赖，导致写一次进度 →
+  // snapshot 变 → 这里重跑 → setPieceId(null) 把刚点开的篇目关掉，
+  // 症状是「点任何一篇都点不开」（闪一下又回到列表）。
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
+
   useEffect(() => {
     if (!projectId) return;
     setLoadingPieces(true);
@@ -110,10 +125,10 @@ export function RecitePage({ initialProjectId }: { initialProjectId?: string | n
       .then((list) => setPieces(list))
       .catch(() => {
         // 离线：用本地 snapshot 的篇目兜底
-        setPieces((snapshot?.pieces ?? []).filter((p) => p.project_id === projectId) as PieceOut[]);
+        setPieces((snapshotRef.current?.pieces ?? []).filter((p) => p.project_id === projectId) as PieceOut[]);
       })
       .finally(() => setLoadingPieces(false));
-  }, [projectId, snapshot, domain]);
+  }, [projectId, domain]);
 
   if (reciteProjects.length === 0) {
     return <Empty description="还没有背诵型项目，先去「项目」页建一个。" />;
@@ -136,6 +151,7 @@ export function RecitePage({ initialProjectId }: { initialProjectId?: string | n
   if (pieceId && pairs) {
     return (
       <Cabin
+        key={pieceId}
         piece={pieces?.find((p) => p.id === pieceId)}
         pairs={pairs}
         onBackList={() => {
@@ -279,6 +295,16 @@ const Cabin = ({
   const [limitSec, setLimitSec] = useState(TIMER_FALLBACK_SEC);
   const [secondsLeft, setSecondsLeft] = useState(TIMER_FALLBACK_SEC);
   const [lastSpentSec, setLastSpentSec] = useState<number | null>(null);
+  /**
+   * 揭示后钉住当前单元的序号。
+   * 不钉的话：`revealUnit` 推进 `last_pos` → `currentIdx` 立刻指向下一段 →
+   * 屏幕上换成了还没背的内容，用户看到的是「刚背完的那段凭空消失」。
+   * 进度该记还是记（`last_pos` 照常落库），只是**显示**留在原地，
+   * 除非点「下一部分」或重新开始计时。
+   */
+  /** 时长输入的草稿；null = 不在编辑，显示 formatCountdown(limitSec)。 */
+  const [clockDraft, setClockDraft] = useState<string | null>(null);
+  const [pinnedIdx, setPinnedIdx] = useState<number | null>(null);
 
   const [fontDelta, setFontDelta] = useState(0);
   const [edits, setEdits] = useState<Record<string, { zh: string; en: string }>>({});
@@ -311,7 +337,14 @@ const Cabin = ({
 
   const saveRef = useRef(onSave);
   saveRef.current = onSave;
+  // 挂载时不落库：progress 已经是 pair.last_pos / piece.recited，原样写回只会
+  // 多一次无意义的 PUT，还会顺带把上面的篇目选择冲掉（snapshot 一变就重置）。
+  const savePrimed = useRef(false);
   useEffect(() => {
+    if (!savePrimed.current) {
+      savePrimed.current = true;
+      return;
+    }
     saveRef.current(doneCount, recited);
   }, [doneCount, recited]);
 
@@ -327,6 +360,7 @@ const Cabin = ({
     setLastSpentSec(Math.max(timerRef.current.limit - timerRef.current.left, 0));
     setTimerPhase("revealed");
     setRevealedUnits((prev) => new Set(prev).add(unit.index));
+    setPinnedIdx(unit.index);
     setDoneCount((n) => lastPosAfterReveal(n, unit));
     if (auto) message.info("时间到，已揭示");
   }, []);
@@ -361,6 +395,7 @@ const Cabin = ({
 
   const startTimer = () => {
     setSecondsLeft(limitSec);
+    setPinnedIdx(reciteRef.current?.index ?? null);
     setTimerPhase("running");
   };
   /** 再来一遍：回到本单元初始遮蔽态，时长可再调（文档 F19.3）。 */
@@ -376,6 +411,7 @@ const Cabin = ({
   const toNextUnit = () => {
     setTimerPhase("idle");
     setRevealedUnits(new Set());
+    setPinnedIdx(null);
   };
 
   const isMasked = (unit: Unit, side: "zh" | "en") => {
@@ -562,20 +598,196 @@ const Cabin = ({
     );
   };
 
-  const renderUnit = (unit: Unit) => (
-    <div key={unit.index}>
-      {displayUnits.length > 1 && effectiveGranularity === "paragraph" ? (
-        <div className="strayt-muted" style={{ marginBottom: "var(--tok-spaceSm-px)" }}>
-          第 {unit.index + 1} / {displayUnits.length} 段
+  /**
+ * 按段展示：整段中文连成一块、整段英文连成一块（文档 F19.1）。
+ *
+ * 之前这里直接把 `unit.pairs` 逐条 `renderPair` 出去，于是「按段」只是进度计数按段，
+ * 屏幕上还是一句一卡 —— 那就等于没分段。段是**版面单位**，得整块给。
+ *
+ * 中文之间不加空格（正文本身无空格），英文之间补一个空格，否则 `a.` + `b.` 会粘成 `a.b.`。
+ * 遮罩也整段一个：按段背的时候单句遮罩没有意义（遮住半段既不是上句也不是下句）。
+ *
+ * 这里**不再挂逐句的编辑/拆并/拖拽入口**（试过「按句编辑」折叠钮，太占地方且没人用）。
+ * 逐句编辑改由顶部粒度切换承担：切到「按句」走 `renderPair` 那条路，
+ * 拆句/合并/改写/拖拽排序一个不少。粒度本来就是这两个视图的开关，
+ * 再加一层折叠只是让同一件事有两种入口。
+ */
+const renderParagraph = (unit: Unit) => {
+  const texts = unit.pairs.map((p) => shown(p));
+  const zh = texts
+    .map((t) => t.zh.trim())
+    .filter(Boolean)
+    .join("");
+  const en = texts
+    .map((t) => t.en.trim())
+    .filter(Boolean)
+    .join(" ");
+  const page = unit.pairs.find((p) => p.loc_page !== null && p.loc_page !== undefined)?.loc_page;
+  return (
+    <div
+      style={{
+        padding: "var(--tok-spaceMd-px)",
+        marginBottom: "var(--tok-spaceMd-px)",
+        background: "var(--tok-colorBgContainer)",
+        border: "solid var(--tok-lineWidth-px)",
+        borderColor: "var(--tok-colorBorderSecondary)",
+      }}
+    >
+      {isMasked(unit, "zh") ? (
+        <MaskButton fontSize={fontSize} label="揭示中文" onClick={() => peekUnit(unit)} />
+      ) : (
+        <p style={{ margin: 0, fontWeight: 600, fontSize, lineHeight }}>{zh}</p>
+      )}
+      {isMasked(unit, "en") ? (
+        <div style={{ marginTop: "var(--tok-spaceSm-px)" }}>
+          <MaskButton fontSize={fontSize} label="揭示英文" inline onClick={() => peekUnit(unit)} />
         </div>
+      ) : (
+        <p
+          className="strayt-muted"
+          style={{ marginTop: "var(--tok-spaceSm-px)", marginBottom: 0, fontSize, lineHeight }}
+        >
+          {en}
+        </p>
+      )}
+      {page !== null && page !== undefined ? (
+        <span className="strayt-muted" style={{ fontSize }}>
+          页 {page}
+        </span>
       ) : null}
-      {unit.pairs.map((p, i) => renderPair(p, unit, unit.pairs[i + 1]?.pair_key))}
+    </div>
+  );
+};
+
+/**
+ * 计时控件。
+ *
+ * 之前它是一整条独立面板横在内容上方，视觉上像凭空插进来的第二个工具条 ——
+ * 「逐句递进」模式下屏幕里明明只有一个单元，为它单开一条横幅不协调。
+ * 现在改挂在**当前单元的标题栏右侧**，控件和它控制的单元在同一张卡片里。
+ * 只在逐句递进出现：另两档一次看全文，没有"当前单元"可计时。
+ */
+const timerControls = mode === "逐句递进" ? (
+    // `flexWrap: nowrap` + `flexShrink: 0`：这个簇要整体贴在标题栏右边，
+    // 绝不能被父亲的 flex-wrap 拆到下一行。
+    <span className="strayt-row" style={{ gap: "var(--tok-spaceXs)", flexWrap: "nowrap", flexShrink: 0 }}>
+      {timerPhase === "idle" ? (
+        /*
+          时长框必须限宽。antd Input 默认 `width: 100%`，放在 flex 容器里会
+          贪婪吃满整行，把 ▾ 和「开始背诵」挤到下一行 —— 表现就是「计时控件和
+          开始背诵不在一行」。所以这里给死宽度，并且 `flex: none` 不许它伸缩。
+          宽度只能用 token 拼：spaceXl(40) + spaceMd(16) ≈ 56，够放下 `3:00`
+          （小字号 4 个字符约 30 + 内边距约 16）。
+        */
+        <>
+          <Input
+            size="small"
+            value={clockDraft ?? formatCountdown(limitSec)}
+            onChange={(e) => {
+              const text = e.target.value;
+              setClockDraft(text);
+              const n = parseClock(text);
+              if (n !== null) {
+                setLimitSec(n);
+                setSecondsLeft(n);
+              }
+            }}
+            onBlur={() => setClockDraft(null)}
+            onPressEnter={(e) => (e.target as HTMLInputElement).blur()}
+            aria-label="本段背诵时长"
+            style={{
+              flex: "none",
+              width: "calc(var(--tok-spaceXl-px) + var(--tok-spaceMd-px))",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          />
+          <Dropdown
+            menu={{
+              items: TIMER_PRESETS.map((s) => ({ key: String(s), label: formatCountdown(s) })),
+              onClick: ({ key }) => {
+                const n = Number(key);
+                setLimitSec(n);
+                setSecondsLeft(n);
+              },
+            }}
+          >
+            <Button size="small" type="text" icon={<DownOutlined />} aria-label="预设时长" />
+          </Dropdown>
+          <Button size="small" type="primary" onClick={startTimer}>
+            开始背诵
+          </Button>
+        </>
+      ) : timerPhase === "running" ? (
+        <>
+          <span
+            style={{
+              fontVariantNumeric: "tabular-nums",
+              color: secondsLeft <= 10 ? "var(--tok-colorError)" : "var(--tok-colorText)",
+            }}
+          >
+            {formatCountdown(secondsLeft)}
+          </span>
+          <Button size="small" type="primary" onClick={() => revealUnit(false)}>
+            完成背诵
+          </Button>
+        </>
+      ) : (
+        <>
+          <span className="strayt-muted">
+            用时 {formatCountdown(lastSpentSec ?? secondsLeft)}
+          </span>
+          <Button size="small" onClick={again} icon={<RedoOutlined />}>
+            再来一遍
+          </Button>
+          <Button
+            size="small"
+            type="primary"
+            disabled={currentIdx >= displayUnits.length - 1}
+            onClick={toNextUnit}
+          >
+            下一部分
+          </Button>
+        </>
+      )}
+    </span>
+  ) : null;
+
+/**
+ * 单元标题栏：左边段号，右边状态与计时控件。三个模式共用，
+ * 免得「对照阅读」有标题栏、另两档又是另一套结构，看着像两个页面。
+ */
+const unitHeader = (unit: Unit) => (
+    <div
+      className="strayt-row"
+      style={{ justifyContent: "space-between", flexWrap: "nowrap", marginBottom: "var(--tok-spaceSm-px)" }}
+    >
+      <span className="strayt-muted">
+        {effectiveGranularity === "paragraph" ? `第 ${unit.index + 1} / ${displayUnits.length} 段` : ""}
+      </span>
+      {/* 右侧簇不换行、不压缩：段号占左边，计时控件整体贴右边成一行 */}
+      <span
+        className="strayt-row"
+        style={{ gap: "var(--tok-spaceXs)", flexWrap: "nowrap", flexShrink: 0 }}
+      >
+        {revealedUnits.has(unit.index) ? <Tag>已揭示</Tag> : null}
+        {unit.index === shownIdx ? timerControls : null}
+      </span>
+    </div>
+  );
+
+const renderUnit = (unit: Unit) => (
+    <div key={unit.index}>
+      {unitHeader(unit)}
+      {effectiveGranularity === "paragraph"
+        ? renderParagraph(unit)
+        : unit.pairs.map((p, i) => renderPair(p, unit, unit.pairs[i + 1]?.pair_key))}
     </div>
   );
 
   /** 逐句递进只显示当前单元；另两档整篇平铺（文档 F19.2）。 */
+  const shownIdx = pinnedIdx ?? currentIdx;
   const visibleUnits =
-    mode === "逐句递进" ? displayUnits.filter((u) => u.index === currentIdx) : displayUnits;
+    mode === "逐句递进" ? displayUnits.filter((u) => u.index === shownIdx) : displayUnits;
 
   return (
     <div>
@@ -604,7 +816,14 @@ const Cabin = ({
         />
       </div>
 
-      <div className="strayt-row" style={{ justifyContent: "space-between", marginBottom: "var(--tok-spaceSm-px)" }}>
+      {/*
+        设置项：每项**独占一行**，标签紧贴自己的控件。
+        原来每行是 `justifyContent: space-between`，标签顶到左边缘、控件顶到右边缘，
+        中间隔着一整个窗口宽度，按钮看着像是跟别的行一组。
+        两项各占一行（不是并排）：两组控件并排很宽，窄窗口会被 flex-wrap
+        拆开，反而比分行更乱。
+      */}
+      <div className="strayt-row" style={{ marginBottom: "var(--tok-spaceSm-px)" }}>
         <span className="strayt-muted">背诵单元</span>
         <Segmented
           size="small"
@@ -629,7 +848,7 @@ const Cabin = ({
       ) : null}
 
       {mode !== "对照阅读" ? (
-        <div className="strayt-row" style={{ justifyContent: "space-between", marginBottom: "var(--tok-spaceSm-px)" }}>
+        <div className="strayt-row" style={{ marginBottom: "var(--tok-spaceSm-px)" }}>
           <span className="strayt-muted">提示语言</span>
           <Segmented
             size="small"
@@ -654,105 +873,12 @@ const Cabin = ({
               setRecited(v);
               saveRef.current(doneCount, v);
             }}
-          />
-        </span>
-      </div>
-
-      {mode === "逐句递进" && currentUnit ? (
-        <div
-          style={{
-            marginBottom: "var(--tok-spaceMd-px)",
-            padding: "var(--tok-spaceMd-px)",
-            background: "var(--tok-colorBgContainer)",
-            border: "solid var(--tok-lineWidth-px)",
-            borderColor: "var(--tok-colorBorderSecondary)",
-          }}
-        >
-          <div className="strayt-row" style={{ justifyContent: "space-between" }}>
-            <span className="strayt-muted">
-              第 {currentUnit.index + 1} / {displayUnits.length} 段
-            </span>
-            <span
-              style={{
-                fontSize: tokens.fontSize * 1.6,
-                fontVariantNumeric: "tabular-nums",
-                color: timerPhase === "running" && secondsLeft <= 10 ? "var(--tok-colorError)" : "var(--tok-colorText)",
-              }}
-            >
-              {timerPhase === "running" ? formatCountdown(secondsLeft) : formatCountdown(limitSec)}
-            </span>
-          </div>
-          <div className="strayt-row" style={{ marginTop: "var(--tok-spaceSm-px)" }}>
-            <Select
-              size="small"
-              value={limitSec}
-              options={TIMER_PRESETS.map((s) => ({ value: s, label: `${s / 60} 分钟` }))}
-              onChange={(v) => {
-                setLimitSec(v);
-                setSecondsLeft(v);
-              }}
-              style={{ minWidth: 0 }}
-            />
-            <InputNumber
-              size="small"
-              min={TIMER_MIN_SEC}
-              max={TIMER_MAX_SEC}
-              step={30}
-              value={limitSec}
-              onChange={(v) => {
-                const n = clampSec(Number(v));
-                setLimitSec(n);
-                setSecondsLeft(n);
-              }}
-            />
-            <span className="strayt-muted">秒</span>
-          </div>
-          <div className="strayt-row" style={{ marginTop: "var(--tok-spaceSm-px)" }}>
-            {timerPhase === "running" ? (
-              <Button type="primary" onClick={() => revealUnit(false)}>
-                完成背诵（提前揭示）
-              </Button>
-            ) : timerPhase === "revealed" ? (
-              <>
-                <Button onClick={again} icon={<RedoOutlined />}>
-                  再来一遍
-                </Button>
-                <Button
-                  type="primary"
-                  disabled={currentIdx >= displayUnits.length - 1}
-                  onClick={toNextUnit}
-                >
-                  背诵下一部分
-                </Button>
-              </>
-            ) : (
-              <Button type="primary" onClick={startTimer}>
-                开始背诵
-              </Button>
-            )}
-          </div>
-          {lastSpentSec !== null && timerPhase !== "running" ? (
-            <span className="strayt-muted" style={{ marginTop: "var(--tok-spaceSm-px)", display: "block" }}>
-              上一次用时 {formatCountdown(lastSpentSec)}，时长可再调。
-            </span>
-          ) : null}
+/>
+          </span>
         </div>
-      ) : null}
 
-      <div>
-        {mode === "对照阅读"
-          ? visibleUnits.map((u) => renderUnit(u))
-          : visibleUnits.map((u) => (
-              <div key={u.index}>
-                <div className="strayt-row" style={{ justifyContent: "space-between" }}>
-                  <span className="strayt-muted">
-                    {effectiveGranularity === "paragraph" ? `第 ${u.index + 1} / ${displayUnits.length} 段` : ""}
-                  </span>
-                  {revealedUnits.has(u.index) ? <Tag>已揭示</Tag> : null}
-                </div>
-                {u.pairs.map((p, i) => renderPair(p, u, u.pairs[i + 1]?.pair_key))}
-              </div>
-            ))}
+<div>
+        {visibleUnits.map((u) => renderUnit(u))}
         {visibleUnits.length === 0 ? <Empty description="这篇目还没有可背诵的句子。" /> : null}
       </div>
 

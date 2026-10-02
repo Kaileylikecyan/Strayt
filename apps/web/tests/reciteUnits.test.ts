@@ -10,6 +10,7 @@ import {
   isUnitDone,
   lastPosAfterReveal,
   paragraphUsable,
+  parseClock,
   TIMER_FALLBACK_SEC,
   TIMER_MAX_SEC,
   TIMER_MIN_SEC,
@@ -153,5 +154,39 @@ describe("计时器取值域（F19.3）", () => {
     expect(formatCountdown(9)).toBe("0:09");
     expect(formatCountdown(185)).toBe("3:05");
     expect(formatCountdown(-5)).toBe("0:00");
+  });
+
+  describe("parseClock", () => {
+    it("认 m:ss 与全角冒号", () => {
+      expect(parseClock("3:00")).toBe(180);
+      expect(parseClock("3：00")).toBe(180);
+      expect(parseClock("  05:30 ")).toBe(330);
+      expect(parseClock("0:10")).toBe(10);
+    });
+
+    it("纯数字按秒算", () => {
+      expect(parseClock("180")).toBe(180);
+      expect(parseClock("300")).toBe(300);
+    });
+
+    // 半成品输入必须返回 null：用户删到一半若当成 0，时长会被打到 10s 下限
+    it("未成形的输入返回 null 而不是 0", () => {
+      expect(parseClock("")).toBeNull();
+      expect(parseClock("3:")).toBeNull();
+      expect(parseClock(":30")).toBeNull();
+      expect(parseClock("abc")).toBeNull();
+      expect(parseClock("-5")).toBeNull();
+    });
+
+    // 秒位进位会被静默吞掉（3:75 变 4:15），所以判无效
+    it("秒位 ≥60 判无效", () => {
+      expect(parseClock("3:75")).toBeNull();
+      expect(parseClock("3:60")).toBeNull();
+    });
+
+    it("越界收敛到上下限", () => {
+      expect(parseClock("0:00")).toBe(TIMER_MIN_SEC);
+      expect(parseClock("99:00")).toBe(TIMER_MAX_SEC);
+    });
   });
 });

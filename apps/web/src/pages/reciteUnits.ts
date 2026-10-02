@@ -107,6 +107,27 @@ export function formatCountdown(sec: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/**
+ * 解析就地可编辑的时长输入：`3:00` / `3：00`（全角冒号）/ `180`（纯秒）。
+ *
+ * 返回 `null` 表示输入**还没成形**（空串、`"3:"`、`"abc"`），调用方要保留旧值
+ * 而不是当成 0 —— 否则用户删到一半就会把时长打成最小值。
+ * 秒位 ≥60 视为无效（`3:75`），不静默进位。
+ */
+export function parseClock(text: string): number | null {
+  const t = text.trim();
+  if (t === "") return null;
+  const m = /^(\d{1,3})\s*[:：]\s*(\d{1,2})$/.exec(t);
+  if (m) {
+    const mm = Number(m[1]);
+    const ss = Number(m[2]);
+    if (ss > 59) return null;
+    return clampSec(mm * 60 + ss);
+  }
+  if (/^\d+$/.test(t)) return clampSec(Number(t));
+  return null;
+}
+
 const GRANULARITY_PREFIX = "strayt:recite:granularity:";
 
 export function granularityStorageKey(pieceId?: string): string | null {
