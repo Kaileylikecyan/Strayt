@@ -102,6 +102,10 @@ class PairOut(ORMModel):
     loc_page: int | None = None
     needs_review: bool
     manually_edited: bool
+    #: 原文版面块序号，篇目内 0 起稠密（ADR-0012）。背诵舱「按段」粒度按它聚合成
+    #: 背诵单元；``None`` = 无块身份，客户端降级为「按句」并标注。
+    #: 未重跑加工的存量篇目恒为 ``None``。
+    block_no: int | None = None
     updated_at: datetime
 
 

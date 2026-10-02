@@ -183,6 +183,8 @@ class Pair(Base):
         UniqueConstraint("pair_key", name="uq_pairs_pair_key"),
         # 文档 §9.2 要求的复合索引
         Index("ix_pairs_piece_seq", "piece_id", "seq"),
+        # 客户端按粒度「按段」合成背诵单元时按这个顺序扫（ADR-0012）。
+        Index("ix_pairs_piece_block", "piece_id", "block_no"),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
@@ -210,6 +212,12 @@ class Pair(Base):
     how: Mapped[str] = mapped_column(String(16), nullable=False, default="direct")
     # 人工微调过（用于"覆盖重跑"时提示哪些改动会被冲掉）
     manually_edited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # 原文版面块序号（0 起，一篇 piece 内稠密）。ADR-0012：``pairs`` 永远是句级原子，
+    # 这一列只给客户端在展示时把同一原文段的对句合成一个「背诵单元」。
+    # **刻意不进 ⑥ 对齐** —— 段级对齐会让长度平衡 DP 整篇错位，见 ADR-0012 决策 1。
+    # NULL = 这条 pair 不知道自己来自哪个块（存量数据，或该来源解析器给不出块），
+    # 客户端据此把「按段」降级为「按句」并标注，而不是拿字数拼一个假的段落。
+    block_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow, onupdate=utcnow

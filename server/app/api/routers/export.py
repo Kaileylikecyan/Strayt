@@ -104,6 +104,9 @@ def _pair(p: Pair) -> dict:
         "confidence": p.confidence,
         "how": p.how,
         "manually_edited": p.manually_edited,
+        # ADR-0012：必须导出。丢了它，异地恢复后「按段」会静默退化成「按句」，
+        # 用户会以为段落划分丢了却查不出原因。
+        "block_no": p.block_no,
         "created_at": p.created_at,
         "updated_at": p.updated_at,
     }

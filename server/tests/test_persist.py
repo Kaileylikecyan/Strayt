@@ -346,3 +346,55 @@ class Test返回值:
 
     def test_new_id_is_32_chars(self):
         assert len(new_id()) == 32
+
+
+class Test块号落库:
+    """ADR-0012：``block_no`` 必须真的落到 ``pairs`` 行上。
+
+    这是「按段」粒度唯一的持久化载体。列加了但没写进去的话，
+    功能表现为「界面能切按段、但分组永远退化成按句」，而且没有任何报错。
+    """
+
+    def test_块号原样落库(self, project_id):
+        res = _pairs()
+        for p in res.pairs:
+            p.block_no = p.seq  # 每个对自成一个块
+        with Session(_engine()) as s:
+            r = save_piece(
+                s,
+                project_id=project_id,
+                file_id=FILE_A,
+                title="块号",
+                res=res,
+                report=check(res),
+                align_mode="llm",
+            )
+            s.commit()
+            got = list(
+                s.scalars(
+                    select(Pair.block_no).where(Pair.piece_id == r.piece_id).order_by(Pair.seq)
+                )
+            )
+        assert got == [0, 1, 2, 3, 4, 5]
+
+    def test_无块号时落NULL而不是0(self, project_id):
+        """0 是合法的块号；把「没有身份」也写成 0 会让存量数据混进第 0 段。"""
+        res = _pairs()
+        assert all(p.block_no is None for p in res.pairs)
+        with Session(_engine()) as s:
+            r = save_piece(
+                s,
+                project_id=project_id,
+                file_id=FILE_A,
+                title="无块号",
+                res=res,
+                report=check(res),
+                align_mode="llm",
+            )
+            s.commit()
+            got = list(
+                s.scalars(
+                    select(Pair.block_no).where(Pair.piece_id == r.piece_id).order_by(Pair.seq)
+                )
+            )
+        assert got == [None] * 6

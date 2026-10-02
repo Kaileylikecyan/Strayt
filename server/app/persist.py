@@ -178,6 +178,7 @@ def save_piece(
                 needs_review=needs,
                 confidence=round(max(0.0, min(1.0, draft.confidence)), 3),
                 how=draft.how,
+                block_no=draft.block_no,
             )
         )
     db.flush()

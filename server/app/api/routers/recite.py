@@ -1,8 +1,15 @@
 """背诵舱（文档 F3）。
 
 一期只有「交错背诵舱」一种形态：按 ``(zh, en)`` 段落对逐条推进。
-四档强度是**客户端渲染策略**（每次显示中/英的比例 + 是否打乱），服务端只存
+三档强度是**客户端渲染策略**（每次显示中/英的比例 + 是否打乱），服务端只存
 ``last_pos`` / ``recited``，不在服务端做状态机。
+
+**背诵单元粒度（按句 / 按段）是客户端的事**（ADR-0012）：服务端存的 ``pairs`` 永远是
+句级原子，段级分组由客户端按 ``block_no`` 在展示时合成。因此本模块的读接口只管吐
+有序的句级对句，不关心用户当前选的粒度。
+
+**进度与粒度解耦**：``last_pos`` 永远记「已背到第几句」。「某段背完」由客户端推导
+（该段内所有 ``seq`` 都越过 ``last_pos``），所以用户切粒度不会毁掉进度。
 """
 
 from __future__ import annotations
@@ -122,6 +129,9 @@ def split_pair(
     F18 结构化编辑：两句/两段并列在一个对里时手动拆开。拆的结果是**两个新的
     ``pair_key``**（稳定 key 算法与 AGENTS §7 的「人工内容与 AI 内容分区」一致），
     原对删除。两个新对都标 ``manually_edited``，覆盖重跑时不会被冲掉。
+
+    两个新对**沿用原对的 ``block_no``**：拆开的两半本就在同一个原文段里，
+    拆完仍属同一段。若拆完后需要按句背，切「按句」粒度即可，不靠块号区分。
     """
     pair = _load_pair(db, project_id, piece_id, body.pair_key)
     if not (body.zh_a.strip() and body.zh_b.strip() and body.en_a.strip() and body.en_b.strip()):
@@ -150,6 +160,7 @@ def split_pair(
         confidence=pair.confidence,
         how="merged",
         manually_edited=True,
+        block_no=pair.block_no,
     )
     sb = Pair(
         pair_key=new_id(),
@@ -162,6 +173,7 @@ def split_pair(
         confidence=pair.confidence,
         how="merged",
         manually_edited=True,
+        block_no=pair.block_no,
     )
     db.add_all([sa, sb])
     return _renumber_pairs(db, piece_id)
@@ -179,6 +191,11 @@ def merge_pair(
 
     F18 结构化编辑：对着背诵舱里断开的对句手动合并。新对拿**新的 ``pair_key``**，
     标 ``manually_edited``，覆盖重跑不冲。
+
+    ``block_no`` 取**被合并两对中靠前那个**（ADR-0012）：合并后的内容横跨两个
+    版面块时，按「首字符所在块」归属与 ``_attach_block_numbers`` 的口径一致 ——
+    客户端按块号聚合成背诵单元，取靠前的块意味着这一单元以靠前的段为准，
+    而不是被吞掉的那一段从列表里凭空消失。
     """
     a = _load_pair(db, project_id, piece_id, body.pair_key)
     b = _load_pair(db, project_id, piece_id, body.with_key)
@@ -204,6 +221,7 @@ def merge_pair(
             confidence=min(a.confidence, b.confidence),
             how="merged",
             manually_edited=True,
+            block_no=first.block_no if first.block_no is not None else second.block_no,
         )
     )
     return _renumber_pairs(db, piece_id)

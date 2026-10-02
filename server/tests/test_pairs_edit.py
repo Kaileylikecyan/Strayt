@@ -14,8 +14,12 @@ def _digest(pairs: list[dict]) -> list[dict]:
     ]
 
 
-def _seed(client, auth, engine, *, n=2) -> dict:
-    """建一个背诵项目（HTTP）+ 一篇目 + n 个段落对，返回 {project_id, piece_id, keys}。"""
+def _seed(client, auth, engine, *, n=2, blocks: list[int | None] | None = None) -> dict:
+    """建一个背诵项目（HTTP）+ 一篇目 + n 个段落对，返回 {project_id, piece_id, keys}。
+
+    ``blocks`` 给定时按它写 ``block_no``，用来测 ADR-0012 的块号在
+    拆分/合并后是否还在 —— 丢了块号，「按段」会在用户手动编辑一次之后静默失效。
+    """
     proj_id = client.post(
         "/api/v1/projects", headers=auth, json={"name": "背诵", "type": "recite"}
     ).json()["id"]
@@ -28,7 +32,16 @@ def _seed(client, auth, engine, *, n=2) -> dict:
         for i in range(n):
             key = f"k{i}"
             keys.append(key)
-            s.add(Pair(piece_id=piece.id, pair_key=key, seq=i, zh=f"中{i}", en=f"en{i}"))
+            s.add(
+                Pair(
+                    piece_id=piece.id,
+                    pair_key=key,
+                    seq=i,
+                    zh=f"中{i}",
+                    en=f"en{i}",
+                    block_no=blocks[i] if blocks else None,
+                )
+            )
         s.commit()
     return {"project_id": proj_id, "piece_id": piece_id, "keys": keys}
 
@@ -145,3 +158,58 @@ class Test合并:
         assert len(got) == 2
         assert [p["seq"] for p in got] == [0, 1]
         assert got[1]["zh"] == "中1中2"
+
+
+class Test块号随编辑保留:
+    """ADR-0012：手动编辑不能让「按段」静默失效。
+
+    ``block_no`` 丢了不会报错，只表现为「我明明按段分好了，改一句就全变一句一格」。
+    """
+
+    def test_拆分后两半沿用原块号(self, client, auth, engine):
+        seed = _seed(client, auth, engine, n=1, blocks=[3])
+        got = client.post(
+            f"/api/v1/projects/{seed['project_id']}/pieces/{seed['piece_id']}/pairs/split",
+            headers=auth,
+            json={
+                "pair_key": seed["keys"][0],
+                "zh_a": "中a",
+                "en_a": "enA",
+                "zh_b": "中b",
+                "en_b": "enB",
+            },
+        ).json()
+        assert [p["block_no"] for p in got] == [3, 3], "拆开的两半本就在同一段里"
+
+    def test_拆分后不存在的块号保持null(self, client, auth, engine):
+        seed = _seed(client, auth, engine, n=1, blocks=[None])
+        got = client.post(
+            f"/api/v1/projects/{seed['project_id']}/pieces/{seed['piece_id']}/pairs/split",
+            headers=auth,
+            json={
+                "pair_key": seed["keys"][0],
+                "zh_a": "中a",
+                "en_a": "enA",
+                "zh_b": "中b",
+                "en_b": "enB",
+            },
+        ).json()
+        assert [p["block_no"] for p in got] == [None, None], "不能凭空给块号"
+
+    def test_同块内合并保留块号(self, client, auth, engine):
+        seed = _seed(client, auth, engine, n=2, blocks=[5, 5])
+        got = client.post(
+            f"/api/v1/projects/{seed['project_id']}/pieces/{seed['piece_id']}/pairs/merge",
+            headers=auth,
+            json={"pair_key": seed["keys"][0], "with_key": seed["keys"][1]},
+        ).json()
+        assert [p["block_no"] for p in got] == [5]
+
+    def test_跨块合并取靠前的块号(self, client, auth, engine):
+        seed = _seed(client, auth, engine, n=2, blocks=[5, 9])
+        got = client.post(
+            f"/api/v1/projects/{seed['project_id']}/pieces/{seed['piece_id']}/pairs/merge",
+            headers=auth,
+            json={"pair_key": seed["keys"][0], "with_key": seed["keys"][1]},
+        ).json()
+        assert [p["block_no"] for p in got] == [5], "按首字符所在块，与解析层口径一致"

@@ -19,6 +19,7 @@ from app.db.models import File, FileParse, Job, Pair, Piece, Project, new_id
 from app.db.session import SessionLocal
 from app.jobs import engine as E
 from app.llm.base import Usage
+from app.parse import blocks as B
 from app.parse.base import ParseError
 from app.persist import SaveOutcome
 from app.storage.local import get_storage
@@ -1015,6 +1016,97 @@ class Test真实PDF落库:
             got = s.scalars(select(Pair).where(Pair.piece_id == piece_id)).one()
             assert got.zh == long_zh
             assert got.en == long_en
+
+
+class Test块号归属:
+    """ADR-0012：管线层把原文块号接到对齐结果上。
+
+    单独测这一层是因为它**没有直接单测覆盖的调用方**——它在 ``_run_unit``
+    里，跑一次要整套加工；而它一旦出错，症状是「按段分出了错的组」，
+    肉眼在背诵舱里根本看不出来。
+    """
+
+    @staticmethod
+    def _body_and_pairs(pair_texts: list[str]) -> tuple[str, AlignResult]:
+        body = "".join(pair_texts)
+        pairs = [PairDraft(seq=i, zh=t, en="En", loc_page=1) for i, t in enumerate(pair_texts)]
+        return body, AlignResult(pairs=pairs, mode="regular")
+
+    @staticmethod
+    def _char_blocks(sizes: list[int]) -> list[int]:
+        """按 ``sizes`` 分块，块号 0 起。"""
+        out: list[int] = []
+        for i, n in enumerate(sizes):
+            out.extend([i] * n)
+        return out
+
+    def test_按原文顺序补块号(self):
+        texts = ["第一句话。", "第二句话。", "第三句话。"]
+        body, res = self._body_and_pairs(texts)
+        sizes = [len(B.norm_text(t)) for t in texts]
+        E._attach_block_numbers(res, body, self._char_blocks(sizes))
+        assert [p.block_no for p in res.pairs] == [0, 1, 2]
+
+    def test_同一块的多句共享块号(self):
+        texts = ["第一句。", "第二句。", "第三句。", "第四句。"]
+        body, res = self._body_and_pairs(texts)
+        n = [len(B.norm_text(t)) for t in texts]
+        sizes = [n[0] + n[1], n[2], n[3]]
+        E._attach_block_numbers(res, body, self._char_blocks(sizes))
+        assert [p.block_no for p in res.pairs] == [0, 0, 1, 2]
+
+    def test_块号重编成篇目内稠密(self):
+        """原文块号会大片跳号（跳过英文块、标题块），不能直接落库。"""
+        texts = ["第一句话。", "第二句话。"]
+        body, res = self._body_and_pairs(texts)
+        body = "".join(texts)
+        sizes = [len(B.norm_text(texts[0])), len(B.norm_text(texts[1]))]
+        raw: list[int] = []
+        raw.extend([40] * sizes[0])
+        raw.extend([91] * sizes[1])
+        E._attach_block_numbers(res, body, raw)
+        assert [p.block_no for p in res.pairs] == [0, 1], "40/91 应重编成 0/1"
+
+    def test_没有块表时全留None(self):
+        """存量篇目走这条路：客户端据此把「按段」降级为「按句」。"""
+        texts = ["第一句话。", "第二句话。"]
+        body, res = self._body_and_pairs(texts)
+        E._attach_block_numbers(res, body, None)
+        assert [p.block_no for p in res.pairs] == [None, None]
+
+    def test_对句匹配不上时留None(self):
+        """宁可这一对没有块号，也不要给个错的 —— 错的会把不相干的句子聚成一段。"""
+        body = "第一句话。"
+        res = AlignResult(
+            pairs=[PairDraft(seq=0, zh="原文里根本没有的字串内容。", en="En", loc_page=1)],
+            mode="regular",
+        )
+        blocks = [0] * len(B.norm_text(body))
+        E._attach_block_numbers(res, body, blocks)
+        assert res.pairs[0].block_no is None
+
+    def test_合并句按首字符所在块归属(self):
+        """对齐器用 ``"".join`` 拼接多句，合并对归到**首句**那块，不是末句那块。
+
+        归错了会让「按段」把合并对塞进后面一段的组里，用户背的分组是错的。
+        """
+        texts = ["第一句。", "第二句。", "第三句。"]
+        merged = texts[0] + texts[1]
+        body = "".join(texts)
+        pairs = [
+            PairDraft(seq=0, zh=merged, en="En", loc_page=1),
+            PairDraft(seq=1, zh=texts[2], en="En", loc_page=1),
+        ]
+        res = AlignResult(pairs=pairs, mode="regular")
+        n = [len(B.norm_text(t)) for t in texts]
+        raw: list[int] = []
+        raw.extend([0] * n[0])
+        raw.extend([1] * n[1])
+        raw.extend([2] * n[2])
+        E._attach_block_numbers(res, body, raw)
+        # 合并对落在块 0（不是 1）；块 2 未被合并对占用，稠密化后是 1
+        assert [p.block_no for p in res.pairs] == [0, 1]
+        assert res.pairs[0].block_no != 1, "合并对必须归首句所在块"
 
 
 # 防止 pytest 收集期就污染全局（_patch 是全局替换）

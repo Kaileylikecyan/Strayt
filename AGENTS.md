@@ -151,7 +151,7 @@ packages/tokens/ 双主题 Design Token
 packages/ui/     组件层（只读 token）
 packages/api-client/  由 openapi.yaml 生成的类型 + 请求封装
 packages/sync-engine/ 弱同步引擎
-docs/adr/        架构决策记录（0001~0011，正文列 LONGTEXT / 稳定 key / 同事务 / 续跑状态 / 质量门控 / 图谱草稿与擦除重建 / 文件去重边界 / 任务调度与孤儿回收 / 口令登录与会话令牌 / 分类规则 priority 列 / 服务商注册表与自定义端点）
+docs/adr/        架构决策记录（0001~0012，正文列 LONGTEXT / 稳定 key / 同事务 / 续跑状态 / 质量门控 / 图谱草稿与擦除重建 / 文件去重边界 / 任务调度与孤儿回收 / 口令登录与会话令牌 / 分类规则 priority 列 / 服务商注册表与自定义端点 / 背诵舱粒度与计时器）
 docs/api/        OpenAPI 契约（生成物，由 scripts/export_openapi.py 产出）
 docs/rtm.md      需求追踪矩阵（F1~F24 ↔ 实现 ↔ 测试 ↔ 状态）
 docs/README.md   文档索引

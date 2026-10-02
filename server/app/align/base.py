@@ -89,6 +89,15 @@ class PairDraft:
     #: 通道 A 要靠它区分「长度启发式觉得可疑」和「真的缺内容」：前者在两通道
     #: 一致度高时应当赦免，后者怎么都不能赦免。
     flagged_by: str | None = None
+    #: 原文版面块序号（ADR-0012），**篇目内 0 起稠密**。背诵舱「按段」粒度按它
+    #: 把连续对句合成一个背诵单元。
+    #:
+    #: **对齐器不填这一列。** 两个通道各自知道自己的分组，但把「分组 → 原文块」
+    #: 这层身份统一接在通道外面（``engine._run_unit`` 走
+    #: ``parse.blocks.attribute_blocks``），理由是通道 A/B 的分组语义不同、
+    #: 只有管线层同时看得到「原文」和「对齐结果」两侧。
+    #: ``None`` = 无块身份 → 客户端把「按段」降级为「按句」。
+    block_no: int | None = None
 
     @property
     def length_ratio(self) -> float:

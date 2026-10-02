@@ -4,6 +4,92 @@
  */
 
 export interface paths {
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login
+         * @description 口令换会话令牌。
+         */
+        post: operations["login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Password
+         * @description 改口令。鉴权由 ``router2`` 在 ``main.py`` 挂载时用 ``AuthDep`` 施加。
+         *
+         *     改完立刻返回**新**会话令牌：签名密钥由口令哈希派生，换口令等于换密钥，
+         *     客户端手上那个旧令牌当场作废。不回传的话用户会被自己踢下线，得重新输一遍。
+         */
+        post: operations["change_password_api_v1_auth_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Setup Password
+         * @description 首次创建口令。已设置过则 409 —— 不给「静默覆盖」留口子。
+         *
+         *     口令强度已由 ``PasswordIn`` 的字段校验器把关（弱口令 → 422），这里
+         *     ``hash_password`` 只会因内部不一致抛错，那确实是 500。
+         */
+        post: operations["setup_password_api_v1_auth_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth State
+         * @description 是否已设置口令。免鉴权 —— 客户端首屏就要知道该显示哪个表单。
+         */
+        get: operations["auth_state_api_v1_auth_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/checkins": {
         parameters: {
             query?: never;
@@ -505,6 +591,11 @@ export interface paths {
          *
          *     F18 结构化编辑：对着背诵舱里断开的对句手动合并。新对拿**新的 ``pair_key``**，
          *     标 ``manually_edited``，覆盖重跑不冲。
+         *
+         *     ``block_no`` 取**被合并两对中靠前那个**（ADR-0012）：合并后的内容横跨两个
+         *     版面块时，按「首字符所在块」归属与 ``_attach_block_numbers`` 的口径一致 ——
+         *     客户端按块号聚合成背诵单元，取靠前的块意味着这一单元以靠前的段为准，
+         *     而不是被吞掉的那一段从列表里凭空消失。
          */
         post: operations["merge_pair_api_v1_projects__project_id__pieces__piece_id__pairs_merge_post"];
         delete?: never;
@@ -529,6 +620,9 @@ export interface paths {
          *     F18 结构化编辑：两句/两段并列在一个对里时手动拆开。拆的结果是**两个新的
          *     ``pair_key``**（稳定 key 算法与 AGENTS §7 的「人工内容与 AI 内容分区」一致），
          *     原对删除。两个新对都标 ``manually_edited``，覆盖重跑时不会被冲掉。
+         *
+         *     两个新对**沿用原对的 ``block_no``**：拆开的两半本就在同一个原文段里，
+         *     拆完仍属同一段。若拆完后需要按句背，切「按句」粒度即可，不靠块号区分。
          */
         post: operations["split_pair_api_v1_projects__project_id__pieces__piece_id__pairs_split_post"];
         delete?: never;
@@ -839,6 +933,8 @@ export interface components {
     schemas: {
         /** ApiKeyIn */
         ApiKeyIn: {
+            /** Base Url */
+            base_url?: string | null;
             /**
              * Label
              * @default
@@ -848,12 +944,14 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "openai" | "deepseek" | "moonshot" | "qwen" | "doubao" | "glm" | "openai_compatible";
+            provider: "deepseek" | "qwen" | "glm" | "moonshot" | "doubao" | "siliconflow" | "minimax" | "hunyuan" | "openai_compatible" | "openai" | "anthropic" | "gemini";
             /** Secret */
             secret: string;
         };
         /** ApiKeyOut */
         ApiKeyOut: {
+            /** Base Url */
+            base_url: string | null;
             /**
              * Created At
              * Format: date-time
@@ -884,15 +982,28 @@ export interface components {
          * @description 不落库的试连：用户刚粘贴 Key 时先试，避免存一堆废 Key。
          */
         ApiKeyProbeIn: {
+            /** Base Url */
+            base_url?: string | null;
             /** Model */
             model?: string | null;
             /**
              * Provider
              * @enum {string}
              */
-            provider: "openai" | "deepseek" | "moonshot" | "qwen" | "doubao" | "glm" | "openai_compatible";
+            provider: "deepseek" | "qwen" | "glm" | "moonshot" | "doubao" | "siliconflow" | "minimax" | "hunyuan" | "openai_compatible" | "openai" | "anthropic" | "gemini";
             /** Secret */
             secret: string;
+        };
+        /**
+         * AuthStateOut
+         * @description 免鉴权的准入状态探测。
+         *
+         *     客户端靠它决定首屏是「创建口令」还是「输入口令」—— 两者的区别只是
+         *     ``POST /auth/setup`` 与 ``POST /auth/login``，不必靠错误码反推。
+         */
+        AuthStateOut: {
+            /** Password Set */
+            password_set: boolean;
         };
         /** BatchIn */
         BatchIn: {
@@ -957,6 +1068,9 @@ export interface components {
         /**
          * CategoryRuleListIn
          * @description 整表覆盖保存：客户端把管理面板里的规则全量回传。
+         *
+         *     **数组顺序即优先级**：第 0 条最先匹配。所以客户端拖拽排序后直接按序回传，
+         *     服务端把它写进 ``priority`` 列。不要改成按 ``id`` 排序 —— ``id`` 是随机的。
          */
         CategoryRuleListIn: {
             /** Rules */
@@ -976,6 +1090,8 @@ export interface components {
             match_on: string;
             /** Pattern */
             pattern: string;
+            /** Priority */
+            priority: number;
         };
         /** CheckinIn */
         CheckinIn: {
@@ -1352,6 +1468,8 @@ export interface components {
         };
         /** PairOut */
         PairOut: {
+            /** Block No */
+            block_no?: number | null;
             /** En */
             en: string;
             /** Loc Page */
@@ -1387,6 +1505,30 @@ export interface components {
             zh_a: string;
             /** Zh B */
             zh_b: string;
+        };
+        /**
+         * PasswordChangeIn
+         * @description 改口令输入。``old_password`` 只校验非空 —— 强度是**当前**口令的事，
+         *     强制它满足现行强度规则会让「弱口令时代设的旧口令」永远改不了。
+         */
+        PasswordChangeIn: {
+            /** New Password */
+            new_password: string;
+            /** Old Password */
+            old_password: string;
+        };
+        /**
+         * PasswordIn
+         * @description 新口令输入。
+         *
+         *     强度校验放在**这里**（pydantic 字段校验器）而不是 ``hash_password`` 里：
+         *     在路由函数体里抛 ``ValueError`` 会变成 500，那是服务器错误不是客户端错误。
+         *     走校验器则自动 422，且 ``ctx`` 里的异常对象由 ``jsonable_errors`` 兜住
+         *     （见 ``app/core/errors.py`` 里那个 422 序列化的坑）。
+         */
+        PasswordIn: {
+            /** Password */
+            password: string;
         };
         /** PieceOut */
         PieceOut: {
@@ -1516,6 +1658,22 @@ export interface components {
             updated_at: string;
         };
         /**
+         * SessionOut
+         * @description 登录/创建口令成功后下发的会话令牌。
+         *
+         *     令牌是 HMAC 签名（不是随机串），因此服务端无需会话表；它的有效期由
+         *     签发时的 TTL 决定，改口令会让它立刻失效。**只在响应里出现，不写日志。**
+         */
+        SessionOut: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Session Token */
+            session_token: string;
+        };
+        /**
          * UploadSessionCreate
          * @description 客户端先声明文件指纹，服务端据此判断走直传还是分块。
          */
@@ -1585,6 +1743,125 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    login_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_api_v1_auth_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChangeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    setup_password_api_v1_auth_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_state_api_v1_auth_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStateOut"];
+                };
+            };
+        };
+    };
     put_checkin_api_v1_checkins_put: {
         parameters: {
             query?: never;

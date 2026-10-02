@@ -926,6 +926,11 @@ components:
       type: object
     PairOut:
       properties:
+        block_no:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Block No
         en:
           title: En
           type: string
@@ -2500,7 +2505,16 @@ paths:
 
         F18 结构化编辑：对着背诵舱里断开的对句手动合并。新对拿**新的 ``pair_key``**，
 
-        标 ``manually_edited``，覆盖重跑不冲。'
+        标 ``manually_edited``，覆盖重跑不冲。
+
+
+        ``block_no`` 取**被合并两对中靠前那个**（ADR-0012）：合并后的内容横跨两个
+
+        版面块时，按「首字符所在块」归属与 ``_attach_block_numbers`` 的口径一致 ——
+
+        客户端按块号聚合成背诵单元，取靠前的块意味着这一单元以靠前的段为准，
+
+        而不是被吞掉的那一段从列表里凭空消失。'
       operationId: merge_pair_api_v1_projects__project_id__pieces__piece_id__pairs_merge_post
       parameters:
       - in: path
@@ -2550,7 +2564,12 @@ paths:
 
         ``pair_key``**（稳定 key 算法与 AGENTS §7 的「人工内容与 AI 内容分区」一致），
 
-        原对删除。两个新对都标 ``manually_edited``，覆盖重跑时不会被冲掉。'
+        原对删除。两个新对都标 ``manually_edited``，覆盖重跑时不会被冲掉。
+
+
+        两个新对**沿用原对的 ``block_no``**：拆开的两半本就在同一个原文段里，
+
+        拆完仍属同一段。若拆完后需要按句背，切「按句」粒度即可，不靠块号区分。'
       operationId: split_pair_api_v1_projects__project_id__pieces__piece_id__pairs_split_post
       parameters:
       - in: path

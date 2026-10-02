@@ -42,3 +42,4 @@ ADR 只记**决策与理由**，不记过程。当前：
 - [0009 口令登录 + 会话令牌由口令哈希派生签名](adr/0009-password-login-and-hash-derived-session-token.md)
 - [0010 分类规则优先级用显式 priority 列](adr/0010-category-rule-priority-column.md)
 - [0011 服务商注册表唯一真源 + 自定义端点边界](adr/0011-provider-registry-single-source-and-custom-endpoint.md)
+- [0012 背诵舱句级对齐+段级分组、进度与粒度解耦](adr/0012-recite-unit-granularity-and-timer.md)

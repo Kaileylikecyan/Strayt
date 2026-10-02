@@ -62,6 +62,10 @@ class Unit:
     page: int
     zh_page: int = 0
     en_page: int = 0
+    #: ``zh`` 逐字符（规范化后）的原文版面块序号表，ADR-0012。
+    #: **不进 to_json** —— 它是加工用的中间索引，不参与 checkpoint 键，
+    #: 序列化进 checkpoint 只会让每次解析多写几十 KB。
+    zh_blocks: list[int] | None = None
 
     @property
     def key(self) -> str:
@@ -193,6 +197,7 @@ def build_plan(db: Session, file_row: File) -> Plan:
             page=p.page,
             zh_page=p.zh_page,
             en_page=p.en_page,
+            zh_blocks=p.zh_blocks,
         )
         for i, p in enumerate(pieces)
     ]
@@ -486,6 +491,7 @@ class JobEngine:
             return
 
         report = check(res)
+        _attach_block_numbers(res, unit.zh, unit.zh_blocks)
         with SessionLocal() as db:
             saved = save_piece(
                 db,
@@ -703,6 +709,37 @@ def _outcome_of(unit: Unit, saved: SaveResult, usage: Usage | None) -> UnitOutco
         review=saved.review_count,
         usage=usage,
     )
+
+
+def _attach_block_numbers(res: AlignResult, body: str, char_blocks: list[int] | None) -> None:
+    """给对齐结果补上原文块序号（ADR-0012）。
+
+    为什么要放在**管线层**而不是对齐器里：通道 A 与通道 B 的分组语义不同
+    （B 是 DP 的长度平衡组，A 是模型给的语义组），只有管线层同时看得到
+    「原文」和「对齐结果」两侧；让两个对齐器各写一份，等于把同一段映射逻辑
+    复制两遍，以后必然只改一处。
+
+    **一次贪心子序列匹配就够**：``PairDraft.zh`` 是 ``body`` 的连续切片（两个通道
+    都用 ``"".join(zh[i] for i in ...)`` 原样拼接），所以能直接查 ``body`` 的
+    逐字符块表，不必先回溯到「句下标」再转一层 —— 少一次映射就少一处可能出错。
+
+    **只取中文那一侧的块**：客户端提示语言可中可英，但中文侧是原文段落的
+    权威顺序（中英两侧的版面分块未必一一对应）。
+
+    稠密化：文档级块序号在单篇内会大片跳号（跳过英文块、标题块），
+    这里重编成篇目内 ``0`` 起连续，客户端才能直接当「第几段」显示。
+    匹配不上的对句留 ``None``，客户端据此降级为按句。
+    """
+    if not char_blocks or not res.pairs:
+        return
+    found = B.attribute_blocks([p.zh for p in res.pairs], body, char_blocks)
+    renumber: dict[int, int] = {}
+    for pair, raw in zip(res.pairs, found, strict=True):
+        if raw is None or raw < 0:
+            continue
+        if raw not in renumber:
+            renumber[raw] = len(renumber)
+        pair.block_no = renumber[raw]
 
 
 def _total_tokens(usage: Usage) -> int:

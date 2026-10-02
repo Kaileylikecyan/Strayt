@@ -5,6 +5,7 @@ import {
   Card,
   Form,
   Input,
+  InputNumber,
   List,
   message,
   Modal,
@@ -21,6 +22,22 @@ import { useApp } from "../store";
 
 const STORAGE_DISCLOSURE =
   "API Key 将加密存储在你自己的服务器上（不留在客户端）。仅服务端在加工/对齐时调用对应模型厂商。";
+
+/** 背诵舱计时默认时长：走通用 KV（ADR-0012，计时状态本身不入库）。 */
+const RECITE_TIMER_KEY = "recite.timer_default_seconds";
+const RECITE_TIMER_MIN = 10;
+const RECITE_TIMER_MAX = 3600;
+const RECITE_TIMER_FALLBACK = 180;
+const RECITE_TIMER_OPTIONS = [
+  { value: 60, label: "1 分钟" },
+  { value: 180, label: "3 分钟" },
+  { value: 300, label: "5 分钟" },
+];
+
+function clampTimerSec(n: number): number {
+  if (!Number.isFinite(n)) return RECITE_TIMER_FALLBACK;
+  return Math.min(Math.max(Math.round(n), RECITE_TIMER_MIN), RECITE_TIMER_MAX);
+}
 
 /** 厂商下拉：按国内 / 海外分组，显示名 + 输入价。
  *
@@ -72,6 +89,7 @@ export function SettingsPage() {
   const [testing, setTesting] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<ModelProfileOut[]>([]);
   const [profileModal, setProfileModal] = useState(false);
+  const [reciteTimerSec, setReciteTimerSec] = useState(RECITE_TIMER_FALLBACK);
   const [profileForm] = Form.useForm<{
     name: string;
     text_key_id?: string;
@@ -134,10 +152,32 @@ export function SettingsPage() {
     }
   };
 
+  const reloadReciteTimer = async () => {
+    if (!api) return;
+    try {
+      const row = await api.domain.getKv(RECITE_TIMER_KEY);
+      setReciteTimerSec(clampTimerSec(Number(row.value)));
+    } catch (err) {
+      void err;
+    }
+  };
+
+  const saveReciteTimer = async (n: number) => {
+    const next = clampTimerSec(n);
+    setReciteTimerSec(next);
+    if (!api) return;
+    try {
+      await api.domain.putKv(RECITE_TIMER_KEY, String(next));
+    } catch {
+      message.error("计时默认时长保存失败");
+    }
+  };
+
   useEffect(() => {
     void reloadKeys();
     void reloadProviders();
     void reloadProfiles();
+    void reloadReciteTimer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
@@ -389,6 +429,30 @@ export function SettingsPage() {
             </List.Item>
           )}
         />
+      </Card>
+
+      <Card size="small" title="背诵舱" style={{ marginTop: "var(--tok-spaceMd-px)" }}>
+        <p className="strayt-muted" style={{ marginTop: 0 }}>
+          「逐句递进」的默认计时。到每个背诵单元前都可以临时改，这里只定默认值。
+        </p>
+        <div className="strayt-row">
+          <Select
+            size="small"
+            value={reciteTimerSec}
+            options={RECITE_TIMER_OPTIONS}
+            onChange={(v) => void saveReciteTimer(v)}
+            style={{ minWidth: 0 }}
+          />
+          <InputNumber
+            size="small"
+            min={RECITE_TIMER_MIN}
+            max={RECITE_TIMER_MAX}
+            step={30}
+            value={reciteTimerSec}
+            onChange={(v) => void saveReciteTimer(Number(v))}
+          />
+          <span className="strayt-muted">秒</span>
+        </div>
       </Card>
 
       <Card size="small" title="数据" style={{ marginTop: "var(--tok-spaceMd-px)" }}>
