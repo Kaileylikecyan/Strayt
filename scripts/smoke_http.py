@@ -48,6 +48,10 @@ def run_graph_cases(
 
     只打协议面：分类规则 CRUD（含空 pattern 挡回、非法 regex 挡回）、以及
     ``node_category`` 弱同步写实体能不能按 ``node_id`` 定位。
+
+    **覆盖边界**：这里建不出真节点（节点要 LLM 抽取才产生），所以
+    ``node_category`` 只能验到「节点不存在」这一道闸。分类归属闸的真覆盖在
+    ``tests/test_category_rules.py::TestNodeCategorySync``（那里直接种节点）。
     """
     gid = call(
         "POST",
@@ -184,12 +188,18 @@ def run_graph_cases(
         )
         print(f"[G6] node_category 对未知 node_id → {r_missing_node['status']}")
 
-        r_missing_cat = push_node_category("also-missing", "no-such-category")
+        # 这条**不是**分类闸的覆盖：图谱临时项目里没有节点（建节点要走 LLM），
+        # 所以 entity_id 只能是假的，服务端先在节点闸上就 skipped 了，分类闸根本没走到。
+        # 分类闸（尤其「别把别的项目的分类拉进来」）的真覆盖在
+        # tests/test_category_rules.py::TestNodeCategorySync::test_reject_cross_project_category，
+        # 那里能直接种真节点。这里保留它只是确认两道闸的顺序：节点不存在时
+        # 不该因为分类也不存在就报成别的错。
+        r_both_missing = push_node_category("also-missing", "no-such-category")
         check(
-            r_missing_cat["status"] in {"skipped", "error"},
-            f"分类不存在应被拒：{r_missing_cat}",
+            r_both_missing["status"] == "skipped",
+            f"节点与分类都不存在时应 skipped（节点闸先拦）：{r_both_missing}",
         )
-        print(f"[G7] node_category 对不存在的分类 → {r_missing_cat['status']}")
+        print(f"[G7] node_category 节点不存在时先在节点闸 skipped → {r_both_missing['status']}")
 
         # 字段白名单：node_category 不许改别的字段
         r_bad_field = call(

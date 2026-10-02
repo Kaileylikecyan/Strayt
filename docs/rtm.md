@@ -226,9 +226,11 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
    （`src-tauri/target|gen|icons` 已加进 `IGNORE_DIRS`，否则会递归扫爆）。
 7. **`app/models/` 是空文件** —— AGENTS.md §5 规划的"领域模型（与 ORM 解耦）"未使用，
    目前 ORM 直接当领域模型用。
-8. **本轮成果未提交** —— 仓库只有一个提交（`52b0f9d` 初版服务端、网页端），
-   本轮 F12/F18/F8/F22/F24 与整个 `apps/desktop` 仍是工作区改动，**没有版本保护**。
-   投产前先提交一次。
+8. ~~本轮成果未提交~~ —— **已提交**（`36ae75b`，87 文件 / +10125 −408）：
+   F8/F12/F18/F22/F24、认证改造（ADR-0009）、分类规则优先级（ADR-0010）、
+   服务商注册表（ADR-0011）、整个 `apps/desktop`、3 个 alembic 迁移与 3 个 ADR 均已入库。
+   `apps/desktop/src-tauri/Cargo.lock` 已取消忽略 —— Rust 锁文件要进版本库，
+   否则本机与别的机器会解出不同的依赖树。
 9. **协议面没有自动化门禁** —— `server/tests/` 全是进程内调用（TestClient 之外不碰 socket），
    「同步路由 + 后台调度」「跨项目同内容上传」「带时区 `client_ts`」这三类问题单测抓不到，
    都是 `scripts/smoke_http.py` 手工跑出来的（ADR-0007 / ADR-0008）。它要活服务端 + 令牌，
