@@ -4,7 +4,7 @@
 ``json_valid`` CHECK、``ON DELETE SET NULL``、utf8mb4 等 MySQL 特有约束，
 拿 SQLite 测等于测了个假的 —— 那些约束恰恰是这版 schema 最容易出错的地方。
 
-每个测试前清空全部业务表（保留 settings 里的令牌），测试间互不污染，
+每个测试前清空全部业务表（保留 settings 里的口令哈希），测试间互不污染，
 也绝不碰开发库 ``strayt``。
 """
 
@@ -20,19 +20,18 @@ os.environ.setdefault(
     "STRAYT_DB_URL", "mysql+pymysql://strayt:strayt@127.0.0.1:3306/strayt_test?charset=utf8mb4"
 )
 os.environ.setdefault("STRAYT_SECRET_KEY", "dGVzdC1vbmx5LWtleS1ub3QtcmVhbC1zZWNyZXQtdGVzdA==")
-os.environ.setdefault("STRAYT_ACCESS_TOKEN_PEPPER", "test-pepper")
 os.environ.setdefault("STRAYT_DATA_DIR", "var_test")
 
 from app.core.config import get_settings
-from app.core.deps import TOKEN_HASH_KEY
-from app.core.security import hash_access_token
+from app.core.deps import PASSWORD_HASH_KEY
+from app.core.security import hash_password, issue_session_token
 from app.db.models import Base, Setting
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-TEST_TOKEN = "stt_test_token_0123456789"
+TEST_PASSWORD = "test-password-1234"
 
 
 def _assert_test_db(url: str) -> str:
@@ -100,19 +99,25 @@ def _type_mismatch(want, have) -> bool:
     return False
 
 
+#: 夹具里种进 DB 的口令哈希原样。改口令用例要靠它拿旧哈希做对比。
+TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
+#: 与 TEST_PASSWORD_HASH 配套的会话令牌（HMAC 签名，免去每个用例跑一次 Argon2 登录）
+TEST_SESSION_TOKEN = issue_session_token(TEST_PASSWORD_HASH)
+
+
 @pytest.fixture(scope="session")
 def engine() -> Iterator:
     eng = create_engine(get_settings().db_url)
     _assert_test_db(get_settings().db_url)
     _ensure_schema(eng)
 
-    # 令牌哈希种一次（幂等：上次跑留下的行直接复用/覆盖，settings 表不被 _clean 清空）
+    # 口令哈希种一次（幂等：上次跑留下的行直接覆盖，settings 表不被 _clean 清空）
     with Session(eng) as s:
-        row = s.get(Setting, TOKEN_HASH_KEY)
+        row = s.get(Setting, PASSWORD_HASH_KEY)
         if row is None:
-            s.add(Setting(k=TOKEN_HASH_KEY, v=hash_access_token(TEST_TOKEN)))
+            s.add(Setting(k=PASSWORD_HASH_KEY, v=TEST_PASSWORD_HASH))
         else:
-            row.v = hash_access_token(TEST_TOKEN)
+            row.v = TEST_PASSWORD_HASH
         s.commit()
 
     yield eng
@@ -121,7 +126,12 @@ def engine() -> Iterator:
 
 @pytest.fixture(autouse=True)
 def _clean(engine) -> Iterator[None]:
-    """每个测试前清空业务表（保留 settings 里的令牌）。"""
+    """每个测试前清空业务表（保留 settings 里的口令哈希）。
+
+    注意：**不要**在测试里真的调用 `/auth/setup` —— 那会覆盖这里种下的哈希，
+    把后续用例的 ``auth`` 夹具全部作废。要测 setup 语义的用例请自己造隔离夹具，
+    或直接测 ``hash_password`` / ``verify_password`` 这层纯函数。
+    """
     with Session(engine) as s:
         for tbl in reversed(Base.metadata.sorted_tables):
             if tbl.name != "settings":
@@ -134,7 +144,12 @@ def _clean(engine) -> Iterator[None]:
 def client(engine, monkeypatch) -> Iterator[TestClient]:
     from app.core import deps as deps_mod
 
-    factory = sessionmaker(bind=engine)
+    # 必须和 app/db/session.py 的 SessionLocal **逐项对齐**。
+    # 曾经这里写的是裸 `sessionmaker(bind=engine)`，autoflush 默认 True 而生产是
+    # False，于是「先 add 再 select 查不到新行」这类 bug 在单测里全绿、只在线上炸：
+    # 拆分对句时新行没 flush，重编号漏掉它们，seq 直接撞车。
+    # 凡是生产 session 的配置项变了，这里要一起改，别让两边漂移。
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
     def _get_db() -> Iterator[Session]:
         s = factory()
@@ -163,4 +178,4 @@ def db_session(engine) -> Iterator[Session]:
 
 @pytest.fixture
 def auth() -> dict[str, str]:
-    return {"Authorization": f"Bearer {TEST_TOKEN}"}
+    return {"Authorization": f"Bearer {TEST_SESSION_TOKEN}"}

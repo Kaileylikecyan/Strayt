@@ -103,7 +103,10 @@ class Test导出:
         assert body["api_keys"][0]["secret_enc"] == "cipher"
         assert body["api_keys"][0]["secret_mask"] == "sk-a***"
         assert body["model_profiles"][0]["text_model"] == "gpt-4o-mini"
-        assert body["settings"][0]["k"]
+        # `settings` 里唯一必然存在的行就是口令哈希，而它**被剔除了**（ADR-0009）：
+        # Argon2id 哈希是离线爆破的直接靶子，不能进用户会下载/转发的快照文件。
+        # 所以这里断言它不在，而不是断言有某个键 —— 夹具不往 settings 塞无关行。
+        assert [row["k"] for row in body["settings"]] == []
 
     def test_snapshot_includes_soft_deleted_projects(self, client, auth, world, db_session):
         deleted = Project(name="已删", type="recite")

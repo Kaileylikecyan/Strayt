@@ -19,6 +19,12 @@ from dataclasses import dataclass
 # 各家 token 计价的核对日期。超过这个时间还没重新核对，就把数字当量级看。
 VERIFIED_AT = "2026-09-27"
 
+# 下面几家的数字是**按公开报价档位估的量级**，不是逐条核对过的现行价：
+# moonshot / doubao / siliconflow / minimax / hunyuan。它们的定价随促销和
+# 阶梯量频繁变，而这些厂家在个人自用场景里常走「按量后付」，差个两三倍很正常。
+# 想让预估贴近自己的实际账单，用 ``STRAYT_PRICE_<provider>_<model>=入,出``
+# 覆盖单条（见文件末尾 ``_env_override``），或直接看厂商控制台的账单。
+
 # 每 100 万 token 的价格，单位：人民币元
 Price = tuple[float, float]  # (输入, 输出)
 
@@ -63,6 +69,26 @@ _PRICES: dict[tuple[str, str], Price] = {
     ("glm", "glm-4-air"): (1.0, 1.0),
     ("glm", "glm-4-flash"): (0.5, 0.5),
     ("glm", "glm-4v-plus"): (12.0, 12.0),
+    # 月之暗面 Kimi
+    ("moonshot", "kimi-k2-0905-preview"): (0.6, 2.5),
+    ("moonshot", "moonshot-v1-128k"): (12.0, 12.0),
+    ("moonshot", "moonshot-v1-32k"): (2.0, 2.0),
+    ("moonshot", "moonshot-v1-8k-vision-preview"): (1.0, 1.0),
+    # 字节豆包（火山方舟）
+    ("doubao", "doubao-1-5-pro-32k-250115"): (0.8, 8.0),
+    ("doubao", "doubao-1-5-lite-32k-250115"): (0.2, 0.8),
+    ("doubao", "doubao-1-5-vision-pro-250428"): (1.0, 3.0),
+    # 硅基流动 SiliconFlow（聚合平台，各模型差异很大，这里只列默认档）
+    ("siliconflow", "Qwen/Qwen2.5-72B-Instruct"): (2.56, 3.34),
+    ("siliconflow", "deepseek-ai/DeepSeek-V3"): (2.0, 8.0),
+    ("siliconflow", "Qwen/Qwen2.5-VL-72B-Instruct"): (4.6, 5.0),
+    # MiniMax
+    ("minimax", "minimax-M2"): (1.2, 6.0),
+    ("minimax", "abab6.5s-chat"): (0.8, 0.8),
+    ("minimax", "MiniMax-Text-01"): (1.0, 4.0),
+    # 腾讯混元
+    ("hunyuan", "hunyuan-turbos-latest"): (0.5, 1.5),
+    ("hunyuan", "hunyuan-large"): (1.3, 3.0),
     # OpenAI
     ("openai", "gpt-4o"): (18.0, 72.0),
     ("openai", "gpt-4o-mini"): (1.1, 4.3),
@@ -101,8 +127,31 @@ def estimate_tokens_messages(prompt: str, *, expected_output_chars: int = 0) -> 
     return estimate_tokens(prompt) + max(1, expected_output_chars // 2)
 
 
+def _env_override(provider: str, model: str) -> Price | None:
+    """``.env`` 覆盖单条价格：``STRAYT_PRICE_<provider>_<model>=2.0,8.0``。
+
+    价目表是静态的，而厂商天天调价、又常给新用户试用折扣。与其让表里的数字
+    慢慢变成谎话，不如留一个显式的覆盖口子 —— 用户拿自己账单里的数填进去，
+    成本预估和超 50% 中断询问（F8）就按他的真实价走。
+    """
+    import os
+
+    key = f"price_{provider}_{model}".replace("-", "_").replace("/", "_").replace(".", "_")
+    raw = os.environ.get(f"STRAYT_{key.upper()}")
+    if not raw:
+        return None
+    try:
+        a, b = raw.replace("，", ",").split(",")
+        return float(a), float(b)
+    except ValueError:
+        return None
+
+
 def get_price(provider: str, model: str) -> Price:
-    """取价。精确命中 → provider 档位 → 兜底档。"""
+    """取价。``.env`` 覆盖 → 精确命中 → provider 档位 → 兜底档。"""
+    ov = _env_override(provider, model)
+    if ov:
+        return ov
     p = _PRICES.get((provider, model))
     if p:
         return p

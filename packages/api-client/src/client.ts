@@ -54,7 +54,9 @@ export type { components, operations };
 
 export interface StraytApiClientOptions {
   baseUrl: string;
-  token: string;
+  /** 登录换来的会话令牌（ADR-0009）。取代旧的长期访问令牌：
+   * 它由服务端用口令哈希派生的密钥 HMAC 签发，改口令即整体失效。 */
+  sessionToken: string;
   /** 网络层，测试可注入。 */
   fetchImpl?: typeof fetch;
 }
@@ -85,7 +87,7 @@ export function createApiClient(options: StraytApiClientOptions): StraytApiClien
   async function request<T>(path: string, opts: HttpOptions = {}): Promise<T> {
     const url = `${base}${path}${qs(opts.query)}`;
     const headers: Record<string, string> = {};
-    if (!opts.public) headers["Authorization"] = `Bearer ${options.token}`;
+    if (!opts.public) headers["Authorization"] = `Bearer ${options.sessionToken}`;
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
     const res = await doFetch(url, {
@@ -124,7 +126,7 @@ export function createApiClient(options: StraytApiClientOptions): StraytApiClien
       form.append("file", file, filename);
       const res = await doFetch(`${base}${path}`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${options.token}` },
+        headers: { Authorization: `Bearer ${options.sessionToken}` },
         body: form,
       });
       return parseJson<T>(res);
@@ -132,14 +134,14 @@ export function createApiClient(options: StraytApiClientOptions): StraytApiClien
     async raw<T>(path: string, method: "PUT" | "POST" | "DELETE", body?: Blob): Promise<T> {
       const res = await doFetch(`${base}${path}`, {
         method,
-        headers: { Authorization: `Bearer ${options.token}` },
+        headers: { Authorization: `Bearer ${options.sessionToken}` },
         body,
       });
       return parseJson<T>(res);
     },
     async fetchBlob(path: string): Promise<Blob> {
       const res = await doFetch(`${base}${path}`, {
-        headers: { Authorization: `Bearer ${options.token}` },
+        headers: { Authorization: `Bearer ${options.sessionToken}` },
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as Partial<ApiErrorBody> | null;

@@ -16,7 +16,15 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const SCAN_ROOTS = ["apps", "packages/ui"];
 const EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".css"]);
-const IGNORE_DIRS = new Set(["node_modules", "dist", ".vite"]);
+// src-tauri/target 是 Rust 构建产物（能到 GB 级），src-tauri/gen 是 Tauri 生成的 schema
+const IGNORE_DIRS = new Set([
+  "node_modules",
+  "dist",
+  ".vite",
+  "target",
+  "gen",
+  "icons",
+]);
 
 const RULES = [
   {

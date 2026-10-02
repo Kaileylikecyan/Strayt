@@ -123,6 +123,37 @@ export async function putPieceProgress(
   );
 }
 
+// F18 结构化编辑：拆分 / 合并段落对（在线专用，返回重排后的全量对列表）
+export async function splitPair(
+  client: StraytApiClient,
+  projectId: string,
+  pieceId: string,
+  body: {
+    pair_key: string;
+    zh_a: string;
+    en_a: string;
+    zh_b: string;
+    en_b: string;
+  },
+): Promise<PairOut[]> {
+  return client.request<PairOut[]>(
+    `/api/v1/projects/${projectId}/pieces/${pieceId}/pairs/split`,
+    { method: "POST", body },
+  );
+}
+
+export async function mergePair(
+  client: StraytApiClient,
+  projectId: string,
+  pieceId: string,
+  body: { pair_key: string; with_key: string },
+): Promise<PairOut[]> {
+  return client.request<PairOut[]>(
+    `/api/v1/projects/${projectId}/pieces/${pieceId}/pairs/merge`,
+    { method: "POST", body },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 打卡 / 计划（F22/F23）
 // ---------------------------------------------------------------------------
@@ -159,7 +190,7 @@ export async function listApiKeys(client: StraytApiClient): Promise<ApiKeyOut[]>
 
 export async function createApiKey(
   client: StraytApiClient,
-  body: { provider: string; secret: string; label?: string },
+  body: { provider: string; secret: string; label?: string; base_url?: string | null },
 ): Promise<ApiKeyOut> {
   return client.request<ApiKeyOut>("/api/v1/settings/api-keys", { method: "POST", body });
 }
@@ -187,8 +218,27 @@ export async function putKv(
   return client.request(`/api/v1/settings/kv/${key}`, { method: "PUT", body: { value } });
 }
 
-export async function listProviders(client: StraytApiClient): Promise<unknown[]> {
-  return client.request<unknown[]>("/api/v1/settings/providers");
+/** `/settings/providers` 的一行。字段名以服务端 `list_providers()` 为准：
+ *  标识是 `key`（不是 `provider`）—— 历史上前端读错过一次，下拉框全是 undefined。 */
+export interface ProviderOut {
+  key: string;
+  display_name: string;
+  region: "国内" | "海外";
+  text_models: string[];
+  vision_models: string[];
+  default_text: string;
+  default_vision: string;
+  supports_vision: boolean;
+  notes: string;
+  console_url: string;
+  base_url_editable: boolean;
+  /** 仅 base_url_editable 的项有值 */
+  base_url: string;
+  price_per_1m_input_cny: number;
+}
+
+export async function listProviders(client: StraytApiClient): Promise<ProviderOut[]> {
+  return client.request<ProviderOut[]>("/api/v1/settings/providers");
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +470,45 @@ export async function getMasteryStats(
   projectId: string,
 ): Promise<MasteryStatsOut> {
   return client.request<MasteryStatsOut>(`/api/v1/projects/${projectId}/mastery-stats`);
+}
+
+// ---------------------------------------------------------------------------
+// 一级分类规则（F12）
+// ---------------------------------------------------------------------------
+export interface CategoryRuleOut {
+  id: string;
+  match_on: "file_name" | "unit_title";
+  kind: "prefix" | "contains" | "regex";
+  pattern: string;
+  category: string;
+  enabled: boolean;
+}
+
+export interface CategoryRuleIn {
+  match_on: "file_name" | "unit_title";
+  kind: "prefix" | "contains" | "regex";
+  pattern: string;
+  category: string;
+  enabled?: boolean;
+}
+
+export async function listCategoryRules(
+  client: StraytApiClient,
+  projectId: string,
+): Promise<CategoryRuleOut[]> {
+  return client.request<CategoryRuleOut[]>(`/api/v1/projects/${projectId}/category-rules`);
+}
+
+/** 全量覆盖保存：服务端先清空该项目规则再按传入顺序重建。 */
+export async function putCategoryRules(
+  client: StraytApiClient,
+  projectId: string,
+  rules: CategoryRuleIn[],
+): Promise<CategoryRuleOut[]> {
+  return client.request<CategoryRuleOut[]>(`/api/v1/projects/${projectId}/category-rules`, {
+    method: "PUT",
+    body: { rules },
+  });
 }
 
 export async function setNodeMastery(

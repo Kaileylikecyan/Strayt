@@ -8,10 +8,13 @@
     "apps/*"
   ],
   "scripts": {
+    "check": "npm run check:frontend",
+    "check:frontend": "npm run check:tokens && npm run typecheck && npm run test && npm run build",
     "check:tokens": "node scripts/check-tokens.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build -w @strayt/web",
+    "build:all": "npm run build -w @strayt/web && npm run build -w @strayt/desktop",
     "gen:api": "npm run gen -w @strayt/api-client"
   },
   "engines": {

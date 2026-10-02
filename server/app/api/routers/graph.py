@@ -15,16 +15,28 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.api.routers.projects import load_project
 from app.core.deps import get_db
 from app.core.errors import ErrorCode, conflict, not_found
-from app.db.models import CardQuote, Category, Edge, Flashcard, Job, Node, Project
+from app.db.models import (
+    CardQuote,
+    Category,
+    CategoryRule,
+    Edge,
+    Flashcard,
+    Job,
+    Node,
+    Project,
+    new_id,
+)
 from app.graph.merge import GraphDraft, apply_edits
 from app.graph.persist import save_graph
 from app.graph.progress import next_mastery
@@ -58,7 +70,130 @@ class GraphConfirmOut(BaseModel):
     category_count: int
     edge_count: int
     edited_nodes: int
-    warnings: list[str] = Field(default_factory=list)
+
+
+class CategoryRuleIn(BaseModel):
+    """一条分类规则（F12）。``match_on``=文件名/篇章标题，``kind``=前缀/包含/正则。"""
+
+    match_on: Literal["file_name", "unit_title"]
+    kind: Literal["prefix", "contains", "regex"]
+    pattern: str = Field(min_length=1, max_length=200)
+    category: str = Field(min_length=1, max_length=120)
+    enabled: bool = True
+
+    @field_validator("pattern", "category")
+    @classmethod
+    def _reject_blank(cls, v: str) -> str:
+        """纯空白必须挡下，不能靠 ``min_length=1``。
+
+        空 pattern 不是「无害地什么都不匹配」：``"".startswith("")``、
+        ``"" in s``、``re.search("", s)`` 全都返回真，一条全空白的规则会把
+        **整个项目**的节点倒进它指定的分类，且没有任何提示。入库时才发现就晚了。
+        """
+        s = v.strip()
+        if not s:
+            raise ValueError("不能为空或纯空白")
+        return s
+
+    @model_validator(mode="after")
+    def _reject_bad_regex(self) -> CategoryRuleIn:
+        """``kind="regex"`` 时当场编译一次。
+
+        ``CategoryRule.match`` 对 ``re.error`` 是静默返回 False 的（避免一条坏规则
+        打断整条管线），代价是写错正则的规则**永远不生效且毫无提示**。所以在入口
+        就报错，让作者当场看见。
+        """
+        if self.kind == "regex":
+            try:
+                re.compile(self.pattern)
+            except re.error as e:
+                raise ValueError(f"正则表达式非法：{e}") from e
+        return self
+
+
+class CategoryRuleOut(BaseModel):
+    id: str
+    match_on: str
+    kind: str
+    pattern: str
+    category: str
+    enabled: bool
+    #: 优先级，越小越先匹配。客户端**不需要**传这个字段 ——
+    #: 它由 PUT 时的数组下标决定（见 CategoryRuleListIn）。
+    priority: int
+
+
+class CategoryRuleListIn(BaseModel):
+    """整表覆盖保存：客户端把管理面板里的规则全量回传。
+
+    **数组顺序即优先级**：第 0 条最先匹配。所以客户端拖拽排序后直接按序回传，
+    服务端把它写进 ``priority`` 列。不要改成按 ``id`` 排序 —— ``id`` 是随机的。
+    """
+
+    rules: list[CategoryRuleIn] = Field(max_length=50)
+
+
+@router.get(
+    "/{project_id}/category-rules", response_model=list[CategoryRuleOut], summary="一级分类规则列表"
+)
+def list_category_rules(project_id: str, db: Session = Depends(get_db)) -> list[CategoryRuleOut]:
+    load_project(db, project_id)
+    rows = db.scalars(
+        select(CategoryRule)
+        .where(CategoryRule.project_id == project_id)
+        .order_by(CategoryRule.priority, CategoryRule.id)
+    )
+    return [
+        CategoryRuleOut(
+            id=r.id,
+            match_on=r.match_on,
+            kind=r.kind,
+            pattern=r.pattern,
+            category=r.category,
+            enabled=r.enabled,
+            priority=r.priority,
+        )
+        for r in rows
+    ]
+
+
+@router.put(
+    "/{project_id}/category-rules",
+    response_model=list[CategoryRuleOut],
+    summary="全量保存一级分类规则",
+)
+def put_category_rules(
+    project_id: str, body: CategoryRuleListIn, db: Session = Depends(get_db)
+) -> list[CategoryRuleOut]:
+    """整表覆盖：先删该项目全部规则再按传入顺序重建，规则按 id 升序生效。"""
+    load_project(db, project_id)
+    db.execute(delete(CategoryRule).where(CategoryRule.project_id == project_id))
+    saved: list[CategoryRuleOut] = []
+    for priority, r in enumerate(body.rules):
+        row = CategoryRule(
+            id=new_id(),
+            project_id=project_id,
+            match_on=r.match_on,
+            kind=r.kind,
+            pattern=r.pattern.strip(),
+            category=r.category.strip(),
+            enabled=r.enabled,
+            priority=priority,
+        )
+        db.add(row)
+        saved.append(
+            CategoryRuleOut(
+                id=row.id,
+                match_on=row.match_on,
+                kind=row.kind,
+                pattern=row.pattern,
+                category=row.category,
+                enabled=row.enabled,
+                priority=row.priority,
+            )
+        )
+    db.commit()
+    return saved
 
 
 class GraphDraftOut(BaseModel):

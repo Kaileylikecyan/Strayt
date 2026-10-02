@@ -23,9 +23,12 @@ import contextlib
 import logging
 from dataclasses import dataclass
 
+from sqlalchemy import select
+
 from app.core.security import decrypt_secret
-from app.db.models import ApiKey, File, Job, ModelProfile, Project, utcnow
+from app.db.models import ApiKey, CategoryRule, File, Job, ModelProfile, Project, utcnow
 from app.db.session import SessionLocal
+from app.graph.classify import CategoryRule as CategoryRuleSpec
 from app.graph.extract import GraphError, GraphUnit
 from app.graph.merge import merge_units
 from app.jobs.engine import (
@@ -85,7 +88,10 @@ def resolve_extractor(db, project_id: str) -> GraphExtractorBundle:
     if key_row is None or not key_row.enabled:
         raise NoProviderError("模型档案绑定的 API Key 无效或已停用")
     provider: LLMProvider = build_provider(
-        key_row.provider, decrypt_secret(key_row.secret_enc), profile.text_model
+        key_row.provider,
+        decrypt_secret(key_row.secret_enc),
+        profile.text_model,
+        base_url=key_row.base_url,
     )
     return GraphExtractorBundle(GraphExtractor(provider), key_row.provider, provider.model)
 
@@ -384,7 +390,30 @@ class GraphEngine:
                 (int(k.split(":", 1)[0]), GraphUnit.from_dict(v))
                 for k, v in sorted(units_json.items(), key=_sort_key)
             ]
-            draft = merge_units(ordered)
+            # F12：挂项目级分类规则 + 源文件名，命中规则统一归到指定一级分类
+            rules = [
+                CategoryRuleSpec(
+                    id=r.id,
+                    match_on=r.match_on,
+                    kind=r.kind,
+                    pattern=r.pattern,
+                    category=r.category,
+                    enabled=r.enabled,
+                    priority=r.priority,
+                )
+                for r in db.scalars(
+                    select(CategoryRule)
+                    .where(CategoryRule.project_id == job.project_id)
+                    .order_by(CategoryRule.priority, CategoryRule.id)
+                )
+            ]
+            file_name = None
+            file_id = (job.checkpoint_json or {}).get("file_id")
+            if file_id:
+                file_row = db.get(File, file_id)
+                if file_row is not None:
+                    file_name = file_row.orig_name
+            draft = merge_units(ordered, rules=rules, file_name=file_name)
             job.results_json = {
                 **(job.results_json or {}),
                 "units": units_json,

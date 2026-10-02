@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.graph.classify import CategoryRule, classify_categories
 from app.graph.extract import MAX_NAME_CHARS, MAX_SUMMARY_CHARS, GraphUnit
 
 
@@ -136,13 +137,25 @@ def _cat_key(draft: GraphDraft, name: str) -> str:
     return key
 
 
-def merge_units(units: list[tuple[int, GraphUnit]]) -> GraphDraft:
-    """按篇序把抽取产物合成项目级草稿。"""
+def merge_units(
+    units: list[tuple[int, GraphUnit]],
+    *,
+    rules: list[CategoryRule] | None = None,
+    file_name: str | None = None,
+) -> GraphDraft:
+    """按篇序把抽取产物合成项目级草稿。
+
+    ``rules``：F12 一级分类规则。命中时整篇统一归到规则指定的类别，
+    覆盖该篇的 LLM 一级分类；未命中保持原判。
+    """
     draft = GraphDraft(unit_count=len(units))
     for unit_index, unit in units:
         if not unit.nodes:
             continue
         cat_names = unit.categories or ["未分类"]
+        ruled = classify_categories(rules or [], file_name=file_name, unit_title=unit.title)
+        if ruled:
+            cat_names = ruled
         local_keys: list[str] = []
         # 第一遍：建节点，占好全局 key。key 里的 ``n索引`` 是**篇内**序号
         # （跨篇按 ``u{篇序}`` 前缀区分），不能用 ``len(draft.nodes)``——
@@ -151,6 +164,9 @@ def merge_units(units: list[tuple[int, GraphUnit]]) -> GraphDraft:
             cat_name = (
                 cat_names[n.category_index] if n.category_index < len(cat_names) else "未分类"
             )
+            if ruled:
+                # 规则命中的篇统一归一个类：篇内 category_index 越过单元素列表就归 0 号
+                cat_name = cat_names[0]
             key = f"u{unit_index:03d}:n{i:02d}"
             draft.nodes.append(
                 GraphDraftNode(

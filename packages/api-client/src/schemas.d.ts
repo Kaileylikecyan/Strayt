@@ -334,6 +334,27 @@ export interface paths {
         patch: operations["rename_project_api_v1_projects__project_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/category-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 一级分类规则列表 */
+        get: operations["list_category_rules_api_v1_projects__project_id__category_rules_get"];
+        /**
+         * 全量保存一级分类规则
+         * @description 整表覆盖：先删该项目全部规则再按传入顺序重建，规则按 id 升序生效。
+         */
+        put: operations["put_category_rules_api_v1_projects__project_id__category_rules_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/flashcards": {
         parameters: {
             query?: never;
@@ -463,6 +484,53 @@ export interface paths {
         get: operations["list_pairs_api_v1_projects__project_id__pieces__piece_id__pairs_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pieces/{piece_id}/pairs/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 合并段落对（相邻两个合成一个）
+         * @description 把相邻两个段落对合并成一个（中文直接拼接，英文用空格连接）。
+         *
+         *     F18 结构化编辑：对着背诵舱里断开的对句手动合并。新对拿**新的 ``pair_key``**，
+         *     标 ``manually_edited``，覆盖重跑不冲。
+         */
+        post: operations["merge_pair_api_v1_projects__project_id__pieces__piece_id__pairs_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pieces/{piece_id}/pairs/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 拆分段落对（拆成两个）
+         * @description 把一个 ``(zh, en)`` 段落对按客户端算好的两半内容拆成两个新对。
+         *
+         *     F18 结构化编辑：两句/两段并列在一个对里时手动拆开。拆的结果是**两个新的
+         *     ``pair_key``**（稳定 key 算法与 AGENTS §7 的「人工内容与 AI 内容分区」一致），
+         *     原对删除。两个新对都标 ``manually_edited``，覆盖重跑时不会被冲掉。
+         */
+        post: operations["split_pair_api_v1_projects__project_id__pieces__piece_id__pairs_split_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -861,6 +929,54 @@ export interface components {
             /** Yes */
             yes: number;
         };
+        /**
+         * CategoryRuleIn
+         * @description 一条分类规则（F12）。``match_on``=文件名/篇章标题，``kind``=前缀/包含/正则。
+         */
+        CategoryRuleIn: {
+            /** Category */
+            category: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "prefix" | "contains" | "regex";
+            /**
+             * Match On
+             * @enum {string}
+             */
+            match_on: "file_name" | "unit_title";
+            /** Pattern */
+            pattern: string;
+        };
+        /**
+         * CategoryRuleListIn
+         * @description 整表覆盖保存：客户端把管理面板里的规则全量回传。
+         */
+        CategoryRuleListIn: {
+            /** Rules */
+            rules: components["schemas"]["CategoryRuleIn"][];
+        };
+        /** CategoryRuleOut */
+        CategoryRuleOut: {
+            /** Category */
+            category: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Match On */
+            match_on: string;
+            /** Pattern */
+            pattern: string;
+        };
         /** CheckinIn */
         CheckinIn: {
             /**
@@ -1008,8 +1124,6 @@ export interface components {
             ok: boolean;
             /** Reason */
             reason: string;
-            /** Warnings */
-            warnings?: string[];
         };
         /** GraphDraftOut */
         GraphDraftOut: {
@@ -1197,7 +1311,7 @@ export interface components {
             client_ts: string;
             /**
              * Entity
-             * @description 可写实体：piece_progress, pair_edit, checkin, plan, goal, node_mastery
+             * @description 可写实体：piece_progress, pair_edit, checkin, plan, goal, node_mastery, node_category
              */
             entity: string;
             /** Entity Id */
@@ -1226,6 +1340,16 @@ export interface components {
              */
             status: "applied" | "skipped" | "conflict" | "error";
         };
+        /**
+         * PairMergeIn
+         * @description 把相邻两个段落对合并成一个。``with_key`` 必须与 ``pair_key`` 相邻（F18）。
+         */
+        PairMergeIn: {
+            /** Pair Key */
+            pair_key: string;
+            /** With Key */
+            with_key: string;
+        };
         /** PairOut */
         PairOut: {
             /** En */
@@ -1247,6 +1371,22 @@ export interface components {
             updated_at: string;
             /** Zh */
             zh: string;
+        };
+        /**
+         * PairSplitIn
+         * @description 把一个段落对拆成两个。两半中英文都由客户端算好（F18 结构化编辑）。
+         */
+        PairSplitIn: {
+            /** En A */
+            en_a: string;
+            /** En B */
+            en_b: string;
+            /** Pair Key */
+            pair_key: string;
+            /** Zh A */
+            zh_a: string;
+            /** Zh B */
+            zh_b: string;
         };
         /** PieceOut */
         PieceOut: {
@@ -2179,6 +2319,72 @@ export interface operations {
             };
         };
     };
+    list_category_rules_api_v1_projects__project_id__category_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_category_rules_api_v1_projects__project_id__category_rules_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryRuleListIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_flashcards_api_v1_projects__project_id__flashcards_get: {
         parameters: {
             query?: {
@@ -2419,6 +2625,78 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_pair_api_v1_projects__project_id__pieces__piece_id__pairs_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                piece_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PairMergeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    split_pair_api_v1_projects__project_id__pieces__piece_id__pairs_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                piece_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PairSplitIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -8,6 +8,12 @@ components:
   schemas:
     ApiKeyIn:
       properties:
+        base_url:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          title: Base Url
         label:
           default: ''
           maxLength: 64
@@ -15,13 +21,18 @@ components:
           type: string
         provider:
           enum:
-          - openai
           - deepseek
-          - moonshot
           - qwen
-          - doubao
           - glm
+          - moonshot
+          - doubao
+          - siliconflow
+          - minimax
+          - hunyuan
           - openai_compatible
+          - openai
+          - anthropic
+          - gemini
           title: Provider
           type: string
         secret:
@@ -36,6 +47,11 @@ components:
       type: object
     ApiKeyOut:
       properties:
+        base_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Base Url
         created_at:
           format: date-time
           title: Created At
@@ -68,6 +84,7 @@ components:
       required:
       - id
       - provider
+      - base_url
       - label
       - secret_mask
       - enabled
@@ -78,6 +95,12 @@ components:
     ApiKeyProbeIn:
       description: 不落库的试连：用户刚粘贴 Key 时先试，避免存一堆废 Key。
       properties:
+        base_url:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          title: Base Url
         model:
           anyOf:
           - maxLength: 64
@@ -86,13 +109,18 @@ components:
           title: Model
         provider:
           enum:
-          - openai
           - deepseek
-          - moonshot
           - qwen
-          - doubao
           - glm
+          - moonshot
+          - doubao
+          - siliconflow
+          - minimax
+          - hunyuan
           - openai_compatible
+          - openai
+          - anthropic
+          - gemini
           title: Provider
           type: string
         secret:
@@ -104,6 +132,21 @@ components:
       - provider
       - secret
       title: ApiKeyProbeIn
+      type: object
+    AuthStateOut:
+      description: '免鉴权的准入状态探测。
+
+
+        客户端靠它决定首屏是「创建口令」还是「输入口令」—— 两者的区别只是
+
+        ``POST /auth/setup`` 与 ``POST /auth/login``，不必靠错误码反推。'
+      properties:
+        password_set:
+          title: Password Set
+          type: boolean
+      required:
+      - password_set
+      title: AuthStateOut
       type: object
     BatchIn:
       properties:
@@ -173,6 +216,94 @@ components:
       - mid
       - 'yes'
       title: CategoryMasteryOut
+      type: object
+    CategoryRuleIn:
+      description: 一条分类规则（F12）。``match_on``=文件名/篇章标题，``kind``=前缀/包含/正则。
+      properties:
+        category:
+          maxLength: 120
+          minLength: 1
+          title: Category
+          type: string
+        enabled:
+          default: true
+          title: Enabled
+          type: boolean
+        kind:
+          enum:
+          - prefix
+          - contains
+          - regex
+          title: Kind
+          type: string
+        match_on:
+          enum:
+          - file_name
+          - unit_title
+          title: Match On
+          type: string
+        pattern:
+          maxLength: 200
+          minLength: 1
+          title: Pattern
+          type: string
+      required:
+      - match_on
+      - kind
+      - pattern
+      - category
+      title: CategoryRuleIn
+      type: object
+    CategoryRuleListIn:
+      description: '整表覆盖保存：客户端把管理面板里的规则全量回传。
+
+
+        **数组顺序即优先级**：第 0 条最先匹配。所以客户端拖拽排序后直接按序回传，
+
+        服务端把它写进 ``priority`` 列。不要改成按 ``id`` 排序 —— ``id`` 是随机的。'
+      properties:
+        rules:
+          items:
+            $ref: '#/components/schemas/CategoryRuleIn'
+          maxItems: 50
+          title: Rules
+          type: array
+      required:
+      - rules
+      title: CategoryRuleListIn
+      type: object
+    CategoryRuleOut:
+      properties:
+        category:
+          title: Category
+          type: string
+        enabled:
+          title: Enabled
+          type: boolean
+        id:
+          title: Id
+          type: string
+        kind:
+          title: Kind
+          type: string
+        match_on:
+          title: Match On
+          type: string
+        pattern:
+          title: Pattern
+          type: string
+        priority:
+          title: Priority
+          type: integer
+      required:
+      - id
+      - match_on
+      - kind
+      - pattern
+      - category
+      - enabled
+      - priority
+      title: CategoryRuleOut
       type: object
     CheckinIn:
       properties:
@@ -411,11 +542,6 @@ components:
         reason:
           title: Reason
           type: string
-        warnings:
-          items:
-            type: string
-          title: Warnings
-          type: array
       required:
       - ok
       - reason
@@ -732,7 +858,7 @@ components:
           title: Client Ts
           type: string
         entity:
-          description: 可写实体：piece_progress, pair_edit, checkin, plan, goal, node_mastery
+          description: 可写实体：piece_progress, pair_edit, checkin, plan, goal, node_mastery, node_category
           title: Entity
           type: string
         entity_id:
@@ -784,6 +910,20 @@ components:
       - status
       title: OpResult
       type: object
+    PairMergeIn:
+      description: 把相邻两个段落对合并成一个。``with_key`` 必须与 ``pair_key`` 相邻（F18）。
+      properties:
+        pair_key:
+          title: Pair Key
+          type: string
+        with_key:
+          title: With Key
+          type: string
+      required:
+      - pair_key
+      - with_key
+      title: PairMergeIn
+      type: object
     PairOut:
       properties:
         en:
@@ -822,6 +962,77 @@ components:
       - manually_edited
       - updated_at
       title: PairOut
+      type: object
+    PairSplitIn:
+      description: 把一个段落对拆成两个。两半中英文都由客户端算好（F18 结构化编辑）。
+      properties:
+        en_a:
+          minLength: 1
+          title: En A
+          type: string
+        en_b:
+          minLength: 1
+          title: En B
+          type: string
+        pair_key:
+          title: Pair Key
+          type: string
+        zh_a:
+          minLength: 1
+          title: Zh A
+          type: string
+        zh_b:
+          minLength: 1
+          title: Zh B
+          type: string
+      required:
+      - pair_key
+      - zh_a
+      - en_a
+      - zh_b
+      - en_b
+      title: PairSplitIn
+      type: object
+    PasswordChangeIn:
+      description: '改口令输入。``old_password`` 只校验非空 —— 强度是**当前**口令的事，
+
+        强制它满足现行强度规则会让「弱口令时代设的旧口令」永远改不了。'
+      properties:
+        new_password:
+          maxLength: 1024
+          minLength: 1
+          title: New Password
+          type: string
+        old_password:
+          maxLength: 1024
+          minLength: 1
+          title: Old Password
+          type: string
+      required:
+      - old_password
+      - new_password
+      title: PasswordChangeIn
+      type: object
+    PasswordIn:
+      description: '新口令输入。
+
+
+        强度校验放在**这里**（pydantic 字段校验器）而不是 ``hash_password`` 里：
+
+        在路由函数体里抛 ``ValueError`` 会变成 500，那是服务器错误不是客户端错误。
+
+        走校验器则自动 422，且 ``ctx`` 里的异常对象由 ``jsonable_errors`` 兜住
+
+        （见 ``app/core/errors.py`` 里那个 422 序列化的坑）。'
+      properties:
+        password:
+          maxLength: 1024
+          minLength: 1
+          title: Password
+          type: string
+      required:
+      - password
+      title: PasswordIn
       type: object
     PieceOut:
       properties:
@@ -1022,6 +1233,26 @@ components:
       - updated_at
       title: ProjectOut
       type: object
+    SessionOut:
+      description: '登录/创建口令成功后下发的会话令牌。
+
+
+        令牌是 HMAC 签名（不是随机串），因此服务端无需会话表；它的有效期由
+
+        签发时的 TTL 决定，改口令会让它立刻失效。**只在响应里出现，不写日志。**'
+      properties:
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        session_token:
+          title: Session Token
+          type: string
+      required:
+      - session_token
+      - expires_at
+      title: SessionOut
+      type: object
     UploadSessionCreate:
       description: 客户端先声明文件指纹，服务端据此判断走直传还是分块。
       properties:
@@ -1140,6 +1371,108 @@ info:
   version: 0.1.0
 openapi: 3.1.0
 paths:
+  /api/v1/auth/login:
+    post:
+      description: 口令换会话令牌。
+      operationId: login_api_v1_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Login
+      tags:
+      - 访问口令登录
+  /api/v1/auth/password:
+    post:
+      description: '改口令。鉴权由 ``router2`` 在 ``main.py`` 挂载时用 ``AuthDep`` 施加。
+
+
+        改完立刻返回**新**会话令牌：签名密钥由口令哈希派生，换口令等于换密钥，
+
+        客户端手上那个旧令牌当场作废。不回传的话用户会被自己踢下线，得重新输一遍。'
+      operationId: change_password_api_v1_auth_password_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Change Password
+      tags:
+      - 访问口令登录
+  /api/v1/auth/setup:
+    post:
+      description: '首次创建口令。已设置过则 409 —— 不给「静默覆盖」留口子。
+
+
+        口令强度已由 ``PasswordIn`` 的字段校验器把关（弱口令 → 422），这里
+
+        ``hash_password`` 只会因内部不一致抛错，那确实是 500。'
+      operationId: setup_password_api_v1_auth_setup_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Setup Password
+      tags:
+      - 访问口令登录
+  /api/v1/auth/state:
+    get:
+      description: 是否已设置口令。免鉴权 —— 客户端首屏就要知道该显示哪个表单。
+      operationId: auth_state_api_v1_auth_state_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStateOut'
+          description: Successful Response
+      summary: Auth State
+      tags:
+      - 访问口令登录
   /api/v1/checkins:
     put:
       operationId: put_checkin_api_v1_checkins_put
@@ -1826,6 +2159,70 @@ paths:
       summary: 改名（类型不可改）
       tags:
       - 项目
+  /api/v1/projects/{project_id}/category-rules:
+    get:
+      operationId: list_category_rules_api_v1_projects__project_id__category_rules_get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/CategoryRuleOut'
+                title: Response List Category Rules Api V1 Projects  Project Id  Category Rules Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 一级分类规则列表
+      tags:
+      - 知识图谱
+    put:
+      description: 整表覆盖：先删该项目全部规则再按传入顺序重建，规则按 id 升序生效。
+      operationId: put_category_rules_api_v1_projects__project_id__category_rules_put
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRuleListIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/CategoryRuleOut'
+                title: Response Put Category Rules Api V1 Projects  Project Id  Category Rules Put
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 全量保存一级分类规则
+      tags:
+      - 知识图谱
   /api/v1/projects/{project_id}/flashcards:
     get:
       description: 按项目取卡组，可只取某掌握度（自测优先复习弱项）。
@@ -2094,6 +2491,104 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: 取段落对（背诵舱数据源）
+      tags:
+      - 背诵舱 / 打卡
+  /api/v1/projects/{project_id}/pieces/{piece_id}/pairs/merge:
+    post:
+      description: '把相邻两个段落对合并成一个（中文直接拼接，英文用空格连接）。
+
+
+        F18 结构化编辑：对着背诵舱里断开的对句手动合并。新对拿**新的 ``pair_key``**，
+
+        标 ``manually_edited``，覆盖重跑不冲。'
+      operationId: merge_pair_api_v1_projects__project_id__pieces__piece_id__pairs_merge_post
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: piece_id
+        required: true
+        schema:
+          title: Piece Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PairMergeIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/PairOut'
+                title: Response Merge Pair Api V1 Projects  Project Id  Pieces  Piece Id  Pairs Merge
+                  Post
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 合并段落对（相邻两个合成一个）
+      tags:
+      - 背诵舱 / 打卡
+  /api/v1/projects/{project_id}/pieces/{piece_id}/pairs/split:
+    post:
+      description: '把一个 ``(zh, en)`` 段落对按客户端算好的两半内容拆成两个新对。
+
+
+        F18 结构化编辑：两句/两段并列在一个对里时手动拆开。拆的结果是**两个新的
+
+        ``pair_key``**（稳定 key 算法与 AGENTS §7 的「人工内容与 AI 内容分区」一致），
+
+        原对删除。两个新对都标 ``manually_edited``，覆盖重跑时不会被冲掉。'
+      operationId: split_pair_api_v1_projects__project_id__pieces__piece_id__pairs_split_post
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: piece_id
+        required: true
+        schema:
+          title: Piece Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PairSplitIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/PairOut'
+                title: Response Split Pair Api V1 Projects  Project Id  Pieces  Piece Id  Pairs Split
+                  Post
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: 拆分段落对（拆成两个）
       tags:
       - 背诵舱 / 打卡
   /api/v1/projects/{project_id}/pieces/{piece_id}/progress:

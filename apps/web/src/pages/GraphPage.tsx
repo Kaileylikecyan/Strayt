@@ -18,14 +18,19 @@ import {
   ApartmentOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  DeleteOutlined,
   EditOutlined,
   EyeOutlined,
+  PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
+  SettingOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { categoryCssVar } from "@strayt/tokens";
 import type {
+  CategoryRuleIn,
+  CategoryRuleOut,
   FlashcardOut,
   GraphBody,
   GraphDraftBody,
@@ -121,7 +126,7 @@ export function GraphPage({ initialProjectId }: { initialProjectId?: string }) {
 // ============================================================================
 
 function GraphView({ projectId }: { projectId: string }) {
-  const { domain } = useApp();
+  const { domain, save } = useApp();
   const [graph, setGraph] = useState<GraphBody | null>(null);
   const [stats, setStats] = useState<MasteryStatsOut | null>(null);
   const [loading, setLoading] = useState(true);
@@ -130,6 +135,7 @@ function GraphView({ projectId }: { projectId: string }) {
   const [draftOpen, setDraftOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<GraphNodeOut | null>(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   const load = useCallback(
     async (which?: {
@@ -187,6 +193,28 @@ function GraphView({ projectId }: { projectId: string }) {
     void load();
   }, [load]);
 
+  const moveNode = async (nodeId: string, categoryId: string) => {
+    try {
+      // 走弱同步写通道（node_category 实体）：在线直传优先，离线入队重放
+      const res = await save({
+        entity: "node_category",
+        entity_id: nodeId,
+        patch: { category_id: categoryId },
+      });
+      if (res === "error") throw new Error("服务端拒绝写入");
+      // 乐观更新：立刻反映到本地，避免等 bootstrap 回来才变
+      setGraph((prev) =>
+        prev
+          ? { ...prev, nodes: prev.nodes.map((n) => (n.id === nodeId ? { ...n, category_id: categoryId } : n)) }
+          : prev,
+      );
+      message.success("已调整分类归属");
+      void load();
+    } catch (err) {
+      message.error(`调整分类失败：${(err as Error).message}`);
+    }
+  };
+
   if (loading) return <Spin style={{ display: "block", margin: "var(--tok-spaceXl-px) auto" }} />;
 
   const hasGraph = (graph?.nodes.length ?? 0) > 0;
@@ -221,19 +249,24 @@ function GraphView({ projectId }: { projectId: string }) {
           <Stat name="已掌握" value={stats?.by_mastery.yes ?? 0} color="var(--tok-masteryYes)" />
           {stats?.total ? <Stat name="掌握率" value={`${(stats.mastery_ratio * 100).toFixed(0)}%`} color="var(--tok-colorPrimary)" /> : null}
         </div>
-        <Input
-          allowClear
-          prefix={<SearchOutlined />}
-          placeholder="搜名称 / 概要 / 摘录"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ width: "calc(var(--tok-spaceLg-px) * 10)" }}
-        />
+        <div className="strayt-row">
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="搜名称 / 概要 / 摘录"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: "calc(var(--tok-spaceLg-px) * 10)" }}
+          />
+          <Button icon={<SettingOutlined />} onClick={() => setRulesOpen(true)}>
+            分类规则
+          </Button>
+        </div>
       </div>
 
       <div style={{ marginTop: "var(--tok-spaceMd-px)" }}>
         {hasGraph ? (
-          <GraphSvg graph={graph!} search={match} onSelect={setSelected} />
+          <GraphSvg graph={graph!} search={match} onSelect={setSelected} onMoveNode={(a, b) => void moveNode(a, b)} />
         ) : (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这张图还是空的——跑完「图谱抽取」任务后，到这里预览确认入库" />
         )}
@@ -251,6 +284,8 @@ function GraphView({ projectId }: { projectId: string }) {
       ) : null}
 
       <NodeDrawer node={selected} stats={stats} onClose={() => setSelected(null)} onMasteryChanged={() => void load()} />
+
+      <CategoryRulesDrawer open={rulesOpen} projectId={projectId} onClose={() => setRulesOpen(false)} />
 
       {draft ? (
         <DraftModal
@@ -293,11 +328,15 @@ function GraphSvg({
   graph,
   search,
   onSelect,
+  onMoveNode,
 }: {
   graph: GraphBody;
   search: string;
   onSelect: (n: GraphNodeOut) => void;
+  onMoveNode?: (nodeId: string, categoryId: string) => void;
 }) {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overCol, setOverCol] = useState<string | null>(null);
   const cats = graph.categories;
   const byCat = new Map<string | null, GraphNodeOut[]>();
   for (const n of graph.nodes) {
@@ -345,6 +384,29 @@ function GraphSvg({
               {truncate(g.name, 12)}
             </text>
             <rect x={gi * (NODE_W + COL_GAP) + 8} y={34} width={NODE_W} height={2} fill={categoryCssVar(gi % 8)} opacity={0.35} />
+            {/* 整列作为拖放目标：把节点拖到列头即改归属（F12 手动调整） */}
+            <rect
+              x={gi * (NODE_W + COL_GAP) + 6}
+              y={4}
+              width={NODE_W + 4}
+              height={height - 4}
+              fill="var(--tok-colorPrimaryBg)"
+              opacity={overCol === g.key ? 0.12 : 0}
+              rx={4}
+              onDragOver={(e) => {
+                if (!dragId || g.key === null) return;
+                e.preventDefault();
+                setOverCol(g.key);
+              }}
+              onDragLeave={() => setOverCol((c) => (c === g.key ? null : c))}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragId && g.key !== null && onMoveNode) onMoveNode(dragId, g.key);
+                setDragId(null);
+                setOverCol(null);
+              }}
+              style={{ pointerEvents: dragId ? "auto" : "none" }}
+            />
           </g>
         ))}
         <g>
@@ -369,8 +431,19 @@ function GraphSvg({
             <g
               key={n.id}
               onClick={() => onSelect(n)}
-              style={{ cursor: "pointer" }}
+              {...({ draggable: Boolean(onMoveNode) } as Record<string, unknown>)}
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", n.id);
+                setDragId(n.id);
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setOverCol(null);
+              }}
+              style={{ cursor: onMoveNode ? "grab" : "pointer" }}
               transform={`translate(${p.x}, ${p.y})`}
+              opacity={dragId === n.id ? 0.5 : 1}
             >
               <rect
                 width={NODE_W}
@@ -392,6 +465,140 @@ function GraphSvg({
         })}
       </svg>
     </div>
+  );
+}
+
+const MATCH_ON_LABEL: Record<CategoryRuleIn["match_on"], string> = {
+  file_name: "文件名",
+  unit_title: "篇章标题",
+};
+const KIND_LABEL: Record<CategoryRuleIn["kind"], string> = {
+  prefix: "前缀",
+  contains: "包含",
+  regex: "正则",
+};
+
+/** F12 分类规则管理：整表覆盖保存。规则在**下一次**图谱抽取入库时生效。 */
+function CategoryRulesDrawer({
+  open,
+  projectId,
+  onClose,
+}: {
+  open: boolean;
+  projectId: string;
+  onClose: () => void;
+}) {
+  const { domain } = useApp();
+  const [rules, setRules] = useState<CategoryRuleIn[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const reload = useCallback(async () => {
+    if (!domain) return;
+    setLoading(true);
+    try {
+      const list = await domain.listCategoryRules(projectId);
+      setRules(list.map((r: CategoryRuleOut) => ({ ...r, enabled: r.enabled })));
+    } catch (err) {
+      message.error(`加载分类规则失败：${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [domain, projectId]);
+
+  useEffect(() => {
+    if (open) void reload();
+  }, [open, reload]);
+
+  const patch = (i: number, next: Partial<CategoryRuleIn>) =>
+    setRules((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...next } : r)));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await domain!.putCategoryRules(
+        projectId,
+        rules.map((r) => ({ ...r, pattern: r.pattern.trim(), category: r.category.trim() })),
+      );
+      message.success("分类规则已保存，下次抽取入库时生效");
+      onClose();
+    } catch (err) {
+      message.error(`保存分类规则失败：${(err as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      width={520}
+      title="一级分类规则（F12）"
+      extra={
+        <Button type="primary" loading={saving} onClick={() => void save()}>
+          保存
+        </Button>
+      }
+    >
+      <p className="strayt-muted">
+        规则在图谱抽取**入库前**按「文件名 / 篇章标题」匹配，命中即把整篇归到指定一级分类（取第一条命中）；没命中的保持模型判定。保存后需重新跑一次抽取任务才生效。
+      </p>
+      <Button
+        icon={<PlusOutlined />}
+        onClick={() =>
+          setRules((prev) => [...prev, { match_on: "file_name", kind: "prefix", pattern: "", category: "", enabled: true }])
+        }
+        style={{ marginBottom: "var(--tok-spaceSm-px)" }}
+      >
+        新增规则
+      </Button>
+      {loading ? (
+        <Spin />
+      ) : rules.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有规则——不配规则就完全按模型判定分类" />
+      ) : (
+        rules.map((r, i) => (
+          <Card key={i} size="small" style={{ marginBottom: "var(--tok-spaceSm-px)" }}>
+            <div className="strayt-row" style={{ gap: "var(--tok-spaceSm-px)", marginBottom: "var(--tok-spaceSm-px)" }}>
+              <Select<CategoryRuleIn["match_on"]>
+                size="small"
+                value={r.match_on}
+                style={{ width: "calc(var(--tok-spaceLg-px) * 5)" }}
+                options={(Object.keys(MATCH_ON_LABEL) as Array<CategoryRuleIn["match_on"]>).map((k) => ({ value: k, label: MATCH_ON_LABEL[k] }))}
+                onChange={(v) => patch(i, { match_on: v })}
+              />
+              <Select<CategoryRuleIn["kind"]>
+                size="small"
+                value={r.kind}
+                style={{ width: "calc(var(--tok-spaceLg-px) * 4)" }}
+                options={(Object.keys(KIND_LABEL) as Array<CategoryRuleIn["kind"]>).map((k) => ({ value: k, label: KIND_LABEL[k] }))}
+                onChange={(v) => patch(i, { kind: v })}
+              />
+              <Button
+                size="small"
+                type="text"
+                icon={<DeleteOutlined />}
+                onClick={() => setRules((prev) => prev.filter((_, idx) => idx !== i))}
+              />
+            </div>
+            <Input
+              size="small"
+              placeholder={r.kind === "regex" ? "匹配内容（如 ^数学）" : "匹配内容（如 数学）"}
+              value={r.pattern}
+              onChange={(e) => patch(i, { pattern: e.target.value })}
+              style={{ marginBottom: "var(--tok-spaceSm-px)" }}
+            />
+            <Input
+              size="small"
+              placeholder="归入的一级分类名（如 高中数学）"
+              value={r.category}
+              onChange={(e) => patch(i, { category: e.target.value })}
+            />
+          </Card>
+        ))
+      )}
+    </Drawer>
   );
 }
 

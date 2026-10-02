@@ -24,7 +24,9 @@
 > 图谱服务端（抽取/合并/入库/接口）与网页端视图均已实现，唯一缺口是真实文档的
 > 端到端验证（需配置 LLM Key）。
 
-## 测试分布（`server/tests/`，共 434 个测试）
+## 测试分布（`server/tests/`，共 525 个测试）
+
+> 数字取自 `uv run pytest --collect-only -q`，别手改 —— 改完跑一次刷新。
 
 | 文件 | 用例 | 覆盖 |
 |---|---|---|
@@ -32,24 +34,30 @@
 | `test_align_llm.py` | 55 | 通道 A LLM 对齐 |
 | `test_align_quality.py` | 32 | ⑦ 质量门控 |
 | `test_api_jobs.py` | 26 | 任务 API、真实 RunManager 调度、孤儿任务回收 |
-| `test_auth.py` | 6 | 令牌鉴权 |
-| `test_export.py` | 3 | 全量快照导出 |
+| `test_auth.py` | 41 | 口令认证四层（哈希/签名/过期/HTTP）+ CORS origin 精确性 |
+| `test_category_rules.py` | 22 | F12 分类规则 CRUD、优先级语义、非法正则挡回 |
+| `test_export.py` | 3 | 全量快照导出（口令哈希必须被剔除） |
 | `test_files.py` | 7 | 上传与文件管理（含跨项目同内容去重） |
 | `test_jobs.py` | 52 | 任务引擎、checkpoint、取消、续跑 |
-| `test_llm.py` | 34 | 6 家 provider、牌价 |
+| `test_llm.py` | 41 | 12 家 provider、牌价、自定义端点不可覆盖固定地址 |
+| `test_pairs_edit.py` | 8 | F18 拆分/合并、`loc_page` 继承、`seq` 稠密唯一 |
 | `test_parse.py` | 45 | ①~⑤ 解析管线 |
 | `test_persist.py` | 19 | ⑧ 入库、拒收、人工微调保护 |
-| `test_projects.py` | 5 | 项目 CRUD、目标 |
-| `test_sync.py` | 11 | 弱同步批量重放、冲突裁决、`pair_key` 寻址、带时区 `client_ts` |
-| 图谱族（`test_graph_*.py`、`test_api_graph.py`、`test_api_mastery.py`、`test_api_flashcards.py`） | 68 | 抽取/合并/入库/掌握度/闪卡 |
 | `test_plans.py` | 6 | 计划读取聚合 |
+| `test_projects.py` | 5 | 项目 CRUD、目标 |
+| `test_settings_api.py` | 19 | Provider 契约、自定义端点边界、KV 不得改写口令哈希 |
+| `test_sync.py` | 11 | 弱同步批量重放、冲突裁决、`pair_key` 寻址、带时区 `client_ts` |
+| 图谱族（`test_graph_*.py`、`test_api_graph.py`、`test_api_mastery.py`、`test_api_flashcards.py`） | 86 | 抽取/合并/入库/掌握度/闪卡 |
 
 真实数据验证：
 - `server/var_test/quality_e2e.py`（⑥⑦，12 篇 / 634 对）、`server/var_test/job_e2e.py`（③④⑤⑥⑦⑧ + 任务引擎，6 场景）—— 进程内跑引擎。
 - `scripts/smoke_http.py`（**协议面**）—— 对着跑着的服务端走客户端那条路：鉴权 → bootstrap →
   上传 → 建任务 → 轮询到 `success` → 校验篇目/对句/`loc_page` → F18 `pair_edit`（`pair_key` 寻址）
-  → 旧 `client_ts` 重放判 `conflict`。需令牌（`STRAYT_TOKEN`）与在跑的服务端，跑完自动清理临时项目。
-  单测抓不到、只能靠它抓的 bug 见 ADR-0007 / ADR-0008。
+  → 旧 `client_ts` 重放判 `conflict` → F18 `split`/`merge`（行数守恒、`seq` 稠密唯一、`loc_page` 继承、
+  不相邻拒绝合并）。加 `--graph` 额外跑 F12：分类规则 CRUD（整表覆盖 / 空白与非法正则挡回 / 可清空）
+  与 `node_category` 写实体三道闸（未知 node、未知分类、非白名单字段）。需口令（`STRAYT_PASSWORD`，脚本自己走 `/auth/login` 换会话令牌）
+  与在跑的服务端，跑完自动清理临时项目。单测抓不到、只能靠它抓的 bug 见 ADR-0007 / ADR-0008
+  与缺口 3（本轮 `autoflush` 漏 flush）。
 
 客户端单测：`packages/sync-engine/tests/engine.test.ts`（vitest，10 用例：入队持久化、
 client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分页、断网保留、快照覆盖）。
@@ -61,7 +69,7 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
 
 | ID | 需求 | 状态 | 实现 | 测试 |
 |---|---|---|---|---|
-| F1 | 服务端接入配置（地址 + 访问令牌） | ✅ | 服务端 `app/core/security.py`（哈希）、`app/core/deps.py`（依赖注入）、`app/scripts/gen_token.py`；客户端 `apps/web` Setup 页（地址+令牌）+ `src/config.ts` 本地记忆 | `test_auth.py`；web 冒烟已验（健康/401/CORS） |
+| F1 | 服务端接入配置（地址 + 访问口令登录） | ✅ | **口令登录**（ADR-0009）：服务端 `app/core/security.py`（Argon2id 哈希 + HMAC 会话令牌）、`app/core/deps.py`（`require_session`）、`app/api/routers/auth.py`（`/auth/state` `/setup` `/login` `/password`）、`app/scripts/set_password.py`（忘记口令的 CLI 逃生口）；客户端 `apps/web` Setup 页**双态**（首次创建口令 / 之后输入口令，由 `/auth/state` 决定）+ 设置页「修改口令」+ `src/config.ts` 只存地址与会话令牌 | `test_auth.py`（33 例：哈希/签名/过期/HTTP 四层）；`scripts/smoke_http.py` 走 `/auth/login` 换令牌 |
 | F2 | 弱同步：全量拉取 / 离线读 / 离线写队列 / 冲突按 `updated_at` 裁决 | ✅ | `GET /sync/bootstrap`、`POST /sync/batch`；客户端 `packages/sync-engine`（快照覆盖/写队列/flush 按 client_ts+LWW）+ `apps/web` store `save()`（直传优先、失败入队）。`client_ts` 在服务端统一折成 naive UTC（浏览器 `toISOString()` 带 `Z`，与库里的 naive 比较会 TypeError） | `test_sync.py`（11 用例）；`packages/sync-engine` `tests/engine.test.ts` 10 用例 |
 | F3 | 同步状态角标 | ✅ | 客户端 `packages/ui` `SyncBadge`（synced/syncing/offline+待传数）+ `apps/web` Shell 顶栏 | — |
 
@@ -76,7 +84,7 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
 
 | ID | 需求 | 状态 | 实现 | 测试 |
 |---|---|---|---|---|
-| F6 | API Key 管理（6 家）+ 连通测试 | ✅ | `app/api/routers/settings.py` + `api_keys` 表 + `app/llm/`（6 家 provider）；Key 存服务端；`/probe` 连通测试 | `test_llm.py` |
+| F6 | API Key 管理（12 家）+ 连通测试 | ✅ | `app/api/routers/settings.py` + `api_keys` 表（加 `base_url` 列）+ `app/llm/registry.py`（**注册表为唯一真源**，`Provider = Literal[tuple(PROVIDERS)]` 派生，见 ADR-0011）；国内 8 家（DeepSeek / 千问 / 智谱 / Kimi / 豆包 / SiliconFlow / MiniMax / 混元）+ 海外 3 家 + `openai_compatible` 自建网关。Key 存服务端；`/probe` 连通测试。**固定端点的厂商填 `base_url` 会被拒**（`Authorization` 跟着地址走，注册表写死的地址是信任边界） | `test_llm.py`（`TestProviderRegistry`）、`test_settings_api.py`（`TestProviderLiteral` / `TestCustomEndpoint`） |
 | F7 | 按项目选服务商与模型，文本/视觉分开 | ✅ | `model_profiles` 表 + `/settings/model-profiles`（CRUD）；客户端 `apps/web` 设置页：档案列表/新建/删除，文本与视觉模型分两个输入 | `test_llm.py`；web 冒烟已验 |
 | F8 | 加工成本预估（按牌价，标"估算"） | ✅ | 服务端：`app/llm/pricing.py` 牌价 + `estimate_cost`；引擎首跑把整篇预估计入 `cost_estimate_json.estimated_cny`，每篇落库后比对，实际超预估 1.5 倍即停在 `interrupted` 终态等确认，续跑即视为同意继续。客户端：任务卡展示预估（规则通道显式标"不花钱"）、进度、熔断原因；**续跑前弹确认框**（摆出预估与断点，`JobsPage::confirmResume`） | `test_jobs.py` 费用用例 + `Test成本熔断`；`scripts/smoke_http.py` 通道 B 预估 ¥0 |
 
@@ -96,7 +104,7 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
 | ID | 需求 | 状态 | 实现 | 测试 |
 |---|---|---|---|---|
 | F11 | 图谱加工：解析 → LLM 抽取 → 预览确认 → 入库 | 🟡 | **服务端已完成**：`app/graph/extract.py`（Agent 抽取）→ `merge.py`（跨篇合并）→ 草稿落 `jobs.results_json` → `POST /jobs/{id}/graph-confirm` 确认后 `persist.py` 原子入库（同事务擦除重建）；`GET /projects/{id}/graph` 全量取图；**客户端 `apps/web` GraphPage「图谱」tab**：最近成功 `graph_extract` 任务的草稿预览（删节点 / 调分类 / 改名 / 改概要）→ `graph-confirm` 提交 | `test_graph_extract.py`、`test_graph_merge.py`、`test_graph_persist.py`、`test_graph_jobs.py`、`test_api_graph.py` |
-| F12 | 一级分类（LLM 划分 / 自定义规则 / 手动调整） | 🟡 | 抽取 prompt 内建分类划分 + `merge.py` 跨篇跨篇同名折叠；`apply_edits` 的 `reassign` 已做手动分箱；多余空分类自动修剪；**自定义规则、客户端拖拽未做**（客户端已提供预览里「调整分类」下拉） | `test_graph_merge.py` |
+| F12 | 一级分类（LLM 划分 / 自定义规则 / 手动调整） | ✅ | 抽取 prompt 内建分类划分 + `merge.py` 跨篇同名折叠；多余空分类自动修剪；**自定义规则**：`category_rules` 表 + 迁移，`app/graph/classify.py` 按「文件名 / 篇章标题 × 前缀 / 包含 / 正则」匹配，入库前（`jobs/graph.py::_finish` → `merge_units`）取**第一条命中**整篇归类，未命中保持 LLM 原判；CRUD `GET`/`PUT /projects/{id}/category-rules`（`PUT` 整表覆盖，**数组下标即优先级**，落库为 `priority` 列 —— 早期版本按随机 `id` 升序排，语义上是错的，见迁移 `d4f1a8b6c207`），入口拒空白 pattern / 非法正则；**手动调整**：预览里 `apply_edits` 的 `reassign` 下拉 + 图谱视图**拖节点换列**（`node_category` 弱同步写实体，含跨项目分类挡回） | `test_category_rules.py`、`test_graph_merge.py`、`scripts/smoke_http.py --graph` |
 | F13 | 图谱视图（分区着色、搜索高亮、掌握度三色） | 🟡 | 数据（节点/边/掌握度）随 `GET /projects/{id}/graph` 返回；客户端 `apps/web` GraphPage：按一级分类分列、列头/SVG 元素取 `categoryCssVar` 调色板、搜索高亮（`focusOutline`）、掌握度三色描边 + 左侧色条（`masteryNo/Mid/Yes` token）、点击节点抽屉看概要/出处/改掌握度 | — |
 | F14 | 知识卡片（概要 + 摘录 + 出处回看） | 🟡 | 卡片数据（`summary`/`quote` 含 `file_id`+`loc_page`+`para`）已随 graph API 返回；**卡片渲染与出处回看（二期）为客户端**（节点抽屉已展示概要 + 摘录 + 页码） | `test_graph_persist.py` |
 | F15 | 闪卡自测 | 🟡 | **服务端已完成**：`POST /projects/{id}/flashcards/generate`（确定性重建：正面=节点名，背面=概要/摘录，无答案跳过）、`GET /projects/{id}/flashcards?mastery=`、`POST /flashcards/{id}/result`（经 `app/graph/progress.py::next_mastery` 回写掌握度）；**客户端 `apps/web` GraphPage「闪卡」tab**：按掌握度筛选、重建卡组、翻面答题、对/错回传、一轮统计与再来一轮 | `test_api_flashcards.py`、`test_graph_progress.py` |
@@ -107,7 +115,7 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
 | ID | 需求 | 状态 | 实现 | 测试 |
 |---|---|---|---|---|
 | F17 | 加工执行：解析 → 中英对齐 → 入库 | ✅ | `app/jobs/engine.py` 全链路；`POST /jobs`、`/resume`；后台调度见 ADR-0008（绑主 loop + 启动回收孤儿任务）；扫描件显式 `NotImplementedError`。客户端 `apps/web` JobsPage：按项目/类型建任务、2.5s 轮询进度、取消、失败/中断续跑、显示加工单元与失败单元 | `test_jobs.py`、`test_api_jobs.py`、**`var_test/job_e2e.py`**、`scripts/smoke_http.py` |
-| F18 | 中英对齐双通道 + 手动微调 | 🟡 | 通道 A `app/align/llm.py`、通道 B `app/align/regular.py`，自动选择已接；**写入通道**：弱同步 `pair_edit`，**按稳定 key `pair_key` 寻址**（客户端拿不到自增主键，服务端 `db.get` 落空时按 `pair_key` 兜底），可改 `zh`/`en`/`seq`，带 `manually_edited`；客户端 RecitePage 改句弹窗 + 复读确认。**拖拽排序/拆合仍未做** | `test_align_llm.py`、`test_align.py`、`test_sync.py::test_pair_edit_accepts_stable_pair_key`、`var_test/quality_e2e.py`、`scripts/smoke_http.py` |
+| F18 | 中英对齐双通道 + 手动微调 | ✅ | 通道 A `app/align/llm.py`、通道 B `app/align/regular.py`，自动选择已接；**写入通道**：弱同步 `pair_edit`，**按稳定 key `pair_key` 寻址**（客户端拿不到自增主键，服务端 `db.get` 落空时按 `pair_key` 兜底），可改 `zh`/`en`/`seq`，带 `manually_edited`；**拆分 / 合并**：`POST /pieces/{id}/pairs/split`（客户端算好两半，服务端换新 `pair_key` + 继承 `loc_page`）与 `/merge`（仅相邻，中文直拼英文空格连），两者都经 `_renumber_pairs` 把 `seq` 压回 0..n-1 稠密唯一；客户端 RecitePage 改句弹窗 + 复读确认 + **HTML5 拖拽排序** + 拆分/合并弹窗 | `test_align_llm.py`、`test_align.py`、`test_pairs_edit.py`、`test_sync.py::test_pair_edit_accepts_stable_pair_key`、`var_test/quality_e2e.py`、`scripts/smoke_http.py` |
 | F19 | 交错背诵舱四档模式 | ✅ | 服务端已提供段落对序列（`GET /pieces`、`/pairs`）；客户端 `apps/web` RecitePage 实现四档（对照阅读/中文提示/遮罩背诵/逐句递进）+ 字号调节 + `last_pos`/`recited` 落库 + 手动改句 | — |
 | F20 | 篇目管理：已背诵标记、进度 x/n、上次位置 | ✅ | `pieces.recited` / `last_pos`；`PUT /pieces/{id}/progress`；`sync` 的 `piece_progress` | `test_persist.py` |
 
@@ -156,20 +164,54 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
 | [0006](adr/0006-graph-draft-in-results-json-and-wipe-rebuild.md) | 图谱草稿存 `results_json`，确认后同一事务擦除重建 |
 | [0007](adr/0007-file-dedup-scope-per-project.md) | 文件去重以 `(project_id, sha256)` 为界，磁盘实体仍按内容寻址复用 |
 | [0008](adr/0008-bind-main-loop-and-recover-orphan-jobs.md) | RunManager 绑主事件循环调度，启动时把遗留任务回收为 `interrupted` |
+| [0009](adr/0009-password-login-and-hash-derived-session-token.md) | 口令登录 + 会话令牌由口令哈希派生（无会话表） |
+| [0010](adr/0010-category-rule-priority-column.md) | 分类规则优先级由显式 `priority` 列承载，不用随机 `id` |
+| [0011](adr/0011-provider-registry-single-source-and-custom-endpoint.md) | 服务商注册表为唯一真源；自定义端点仅 `openai_compatible` 开放 |
 
 ## 已知缺口（下一阶段的实际入口）
 
-1. **Tauri 桌面端尚未开始** —— `apps/desktop` 为空；网页端（`apps/web`）已跑通
-   背诵型主链路（项目/资料/任务/背诵舱/打卡/设置）+ 共享包
-   （`packages/{tokens,ui,api-client,sync-engine}`）。AGENTS.md §4 记：Rust/cargo 与
-   MSVC Build Tools 未装，Tauri 构建前必须补齐；桌面端补同套页面 + 图谱视图即可复用全部共享包。
+1. ~~Tauri 桌面端：脚手架与前端已完成，编译卡在 Windows SDK~~ —— **已出 exe 并验证启动**。
+   `apps/desktop` 原本是三个空目录，现已补齐：
+   - **前端**：`src/main.tsx` 只做挂载，页面全部 import 自 `@strayt/web/*`
+     （vite alias + tsconfig paths 指到 `apps/web/src`）。**同源，不复制页面** ——
+     `npm run build -w @strayt/web` 与 `-w @strayt/desktop` 产出的 JS 资源 hash 完全相同
+     （`index-Gat2oVwU.js`，945.39 kB），已验证三次。改动 `apps/web` 桌面端自动同步。
+   - **原生层**：`src-tauri/{Cargo.toml,build.rs,tauri.conf.json,capabilities/default.json,src/{main,lib}.rs}`
+     + 图标。`lib.rs` 刻意**零 plugin、零业务逻辑**（AGENTS.md §3 红线：解析与 LLM 只在服务端），
+     权限只给 `core:default`。窗口 1280×820，devUrl `127.0.0.1:5174`。
+   - **产出**：`target\release\strayt-desktop.exe`，3.22 MB，`ProductName: Strayt`、
+     `FileVersion: 0.1.0`。**实测启动成功**：窗口标题「学习工作台 Strayt」，
+     1293×856（配置 1280×820 + 系统边框），27.6 MB 内存 / 26 线程，stderr 干净。
+    - **服务端**：`main.py` 的 CORS `allow_origin_regex` **同时**含 `http://tauri.localhost`
+      与 `tauri://localhost`，实测两个 origin 都会回显，而 `evil.example.com` 与
+      `http://tauri.localhost.evil.com` 不回（后者是本轮修掉的真 bug —— Windows 上
+      WebView2 走的是 `http://tauri.localhost` 而非 `tauri://localhost`，只放行后者时
+      桌面端所有请求都是 `failed to fetch`，但网页端 dev 完全正常，很容易误判成前端问题）。
+
+   - **验证**：`npm run check:frontend`（check:tokens → 全仓 typecheck → test → build）全绿；
+     `cargo check` 退出码 0 无警告。
+   - **遗留**：**MSI/NSIS 安装包打不出来** —— `tauri build` 要从 GitHub 下 WiX 工具链
+     （`wixtoolset/wix3` release），本机到 GitHub 的连接时断时续，会报
+     `failed to bundle project: Peer disconnected`。**exe 本身不受影响**（Rust 编译已完成），
+     要装包时网络能通 GitHub 重跑即可；只想验证编译用
+     `npm run tauri:build -w @strayt/desktop -- --no-bundle`（退出码 0，已验证）。
+- **已解决**：首次启动停在 Setup 页的障碍已解除。原实现要手输令牌，而令牌在
+      `settings.access_token_hash` 里存的是**加盐 PBKDF2**、拿不回明文（§3 红线 5，故意如此），
+      所以自动化测试填不进去。现在改为**口令**：库中无口令时 Setup 页直接创建，之后输口令登录
+      （ADR-0009）。口令同样只存 Argon2id 哈希，但创建/登录这条 HTTP 路径本身可自动化，
+      `scripts/smoke_http.py` 已改为走 `/auth/login` 换会话。
 2. **图谱型管线服务端已完成，客户端非空但缺真实数据验证** —— F11~F16 的服务端抽取/合并/入库/接口
    （`app/graph/`、`app/jobs/graph.py`、`app/api/routers/graph.py`）已就绪；网页端 GraphPage「图谱」tab
    已实现预览确认、图谱视图（双主题调色板 F13）、闪卡自测（F15）、掌握度统计（F16），空态/契约形状已
    用临时图谱项目核对（`GET /graph`、/mastery-stats、/flashcards、generate）。**受无 LLM Key 限制，
    未用真实文档跑通抽取 → 草稿 → 确认的端到端链路**（配置 Key 后可用 `scripts/smoke_http.py` 扩展）。
-3. **F18 只做了一半** —— 网页端已能逐句改中英文（`pair_key` 寻址，ADR-0007 之外的另一处
-   协议细节记在 F18 行），但**拖拽排序 / 拆分合并**这类结构化编辑还没做，桌面端也没接。
+3. ~~F18 只做了一半~~ —— 已补齐：服务端 `POST /pieces/{id}/pairs/split` 与 `/merge`
+   （F12/F18 本轮一起做的），客户端 RecitePage 拖拽排序 + 拆分/合并弹窗。
+   桌面端因与网页端同源（见缺口 1）自动就有了这套 UI。
+   本轮修掉一个真 bug：`SessionLocal` 是 `autoflush=False`，拆分/合并新加的行在
+   `_renumber_pairs` 的 SELECT 前没 flush，导致返回列表漏行且新行带着旧 `seq` 与重编号后的
+   行**撞 seq**（客户端排序错位）。同时把 `tests/conftest.py` 的 sessionmaker 改成与生产
+   逐项对齐（原来 autoflush 默认 True，把这类 bug 全遮住了 —— 见缺口 10）。
 4. ~~F8 的"预估与实际差异 >50% 中断"~~ —— 已实现：引擎首跑把整篇预估计入
    `cost_estimate_json.estimated_cny`，每篇落库后比对，超 1.5 倍停在 `interrupted` 终态
    （`b39d0fcb295f` 给 `jobs.status` 加了该值），续跑视为确认继续并关闭熔断。
@@ -179,11 +221,27 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
 5. ~~客户端未接 F22/F24 UI~~ —— 已做：网页端 CheckinPage 待办完成按钮 + 设置页导出按钮。
 6. **F13 依赖双主题 Design Token**（AGENTS.md §4 的硬性要求，样式资源必须物理隔离）。
    `packages/tokens` 双主题 + `packages/ui` 组件层已就绪、`check:tokens` 门禁已通；
-   图谱视图已用 `chartCategory` 调色板 + 掌握度三色 token 渲染，未做桌面端。
+   图谱视图已用 `chartCategory` 调色板 + 掌握度三色 token 渲染。
+   `check:tokens` 扫的是整个 `apps/`，桌面端页面因与网页端同源**自动同门禁**
+   （`src-tauri/target|gen|icons` 已加进 `IGNORE_DIRS`，否则会递归扫爆）。
 7. **`app/models/` 是空文件** —— AGENTS.md §5 规划的"领域模型（与 ORM 解耦）"未使用，
    目前 ORM 直接当领域模型用。
-8. **仓库零提交** —— 所有文件仍是 untracked，成果没有版本保护。
+8. **本轮成果未提交** —— 仓库只有一个提交（`52b0f9d` 初版服务端、网页端），
+   本轮 F12/F18/F8/F22/F24 与整个 `apps/desktop` 仍是工作区改动，**没有版本保护**。
+   投产前先提交一次。
 9. **协议面没有自动化门禁** —— `server/tests/` 全是进程内调用（TestClient 之外不碰 socket），
    「同步路由 + 后台调度」「跨项目同内容上传」「带时区 `client_ts`」这三类问题单测抓不到，
    都是 `scripts/smoke_http.py` 手工跑出来的（ADR-0007 / ADR-0008）。它要活服务端 + 令牌，
    CI 跑不了，所以**改完接口或任务引擎后要手跑一次**（见 AGENTS.md §2）。
+10. **测试夹具与生产 session 配置漂移过一次** —— `tests/conftest.py` 原来写
+    `sessionmaker(bind=engine)`（autoflush 默认 True），而 `app/db/session.py` 是
+    `autoflush=False`。后果是「先 `add` 再 `select` 查不到新行」这类 bug 单测全绿、
+    只在 HTTP 层炸（本轮 split/merge 的 seq 撞车就是这样漏出去的）。已改成
+    `sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)` 逐项对齐，
+    并在注释里写明「生产 session 配置变了这里要一起改」。**再引入新的 session 级配置
+    时记得同步**。
+11. **校验器抛 `ValueError` 会把 422 变成 500** —— pydantic 把自定义校验器抛的异常对象
+    原样留在 `errors()["ctx"]` 里，直接丢给 `JSONResponse` 序列化必炸。本轮加
+    `app/core/errors.py::jsonable_errors` 在 422 处理器里过一道（`Field(min_length=...)`
+    这类约束失败不受影响，所以以前没暴露）。**新写校验器不用为此操心**，但别绕过它
+    直接用 `exc.errors()`。

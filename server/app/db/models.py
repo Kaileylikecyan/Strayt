@@ -277,7 +277,7 @@ class Plan(Base):
 class Setting(Base):
     """KV 配置。键固定如下：
 
-    - ``access_token_hash``      访问令牌哈希（唯一准入凭证）
+    - ``access_password_hash``   访问口令的 Argon2id 哈希（唯一准入凭证，ADR-0009）
     - ``schema_version``         快照 schema 版本，客户端据此判断本地缓存是否失效
     - ``checkin_items``          每日打卡项定义（用户可自定义）
     - ``default_model_profile``  默认模型档案 id
@@ -428,6 +428,10 @@ class ApiKey(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: 仅 ``provider='openai_compatible'`` 时有意义：用户自己填的 OpenAI 兼容端点
+    #: （本地 vLLM / Ollama，或 OneAPI / NewAPI 中转）。固定端点的厂商恒为 NULL，
+    #: 且服务端**拒绝**为它们填这个字段 —— 否则 Key 能被指使发往任意主机。
+    base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     label: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     secret_enc: Mapped[str] = mapped_column(Text, nullable=False)
     # 掩码，展示用，永不回传完整 Key
@@ -485,6 +489,45 @@ class Category(Base):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class CategoryRule(Base):
+    """一级分类规则（F12）：按文件名/篇章标题把抽取产物归入指定一级分类。
+
+    规则是客户端维护、服务端归档的可配置项（对应 AGENTS §6 ③「结构正则外置为可配置规则」
+    的思路）。``match_on`` 决定匹配对象（``file_name`` 文件名 / ``unit_title`` 篇章标题），
+    ``kind`` 决定匹配方式（``prefix`` 前缀 / ``contains`` 包含 / ``regex`` 正则）。
+    入库阶段``merge_units`` 会按规则把命中篇目标记到 ``category`` 指定的类，未命中的
+    保持 LLM 原判。规则按 ``id`` 顺序取**第一条命中**。
+    """
+
+    __tablename__ = "category_rules"
+    __table_args__ = (
+        Index("ix_category_rules_project", "project_id"),
+        Index("ix_category_rules_project_priority", "project_id", "priority"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    # file_name | unit_title
+    match_on: Mapped[str] = mapped_column(String(16), nullable=False)
+    # prefix | contains | regex
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    pattern: Mapped[str] = mapped_column(String(200), nullable=False)
+    category: Mapped[str] = mapped_column(String(120), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: 优先级 = 越小越先匹配，取**客户端提交的数组下标**。
+    #: 不要用 ``id`` 排序当优先级 —— ``id`` 是 ``new_id()`` 随机生成的，
+    #: 排出来与用户排的顺序无关，语义上就是错的。
+    #: （原先 ``GET`` 走 ``order_by(id)``，导致回读顺序随机，
+    #: ``smoke_http.py`` 里那条 ``got[0]`` 断言是碰运气通过的。）
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
 
 
 class Node(Base):

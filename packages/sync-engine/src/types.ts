@@ -6,7 +6,8 @@ export type Writables =
   | "checkin"
   | "plan"
   | "goal"
-  | "node_mastery";
+  | "node_mastery"
+  | "node_category";
 
 /** 一条写队列操作（服务端 OpIn）。 */
 export interface WriteOp {

@@ -1,0 +1,17 @@
+# AGENTS.md §1「依赖下载走镜像：cargo → rsproxy」的落地配置。
+#
+# 为什么需要它：本机 git 全局代理指向 http://127.0.0.1:7890（Clash），
+# 但那个端口常常没在跑。cargo 会读 git 的 http.proxy，于是对 crates.io 报
+#   "Failed to connect to index.crates.io:443 over proxy 127.0.0.1"
+# 看起来像没网，其实是走了死代理。用 crates.io 稀疏索引 + 显式清空代理绕过。
+#
+# 代理本身确实要用时（挂了 Clash），删掉下面 [http] 段的 proxy = "" 即可。
+
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[http]
+proxy = ""

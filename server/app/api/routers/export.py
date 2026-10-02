@@ -4,7 +4,13 @@
 出问题时可人工恢复。覆盖所有业务表（含已软删项目与档案），**不导出**
 加工任务（``jobs``）、上传会话（``upload_sessions``）、解析产物
 （``file_parses``，可重跑再生）这类瞬时状态；``api_keys`` 存的是
-Fernet 密文、``settings`` 存的是令牌哈希，均不泄露明文凭据。
+Fernet 密文。
+
+**口令哈希一律剔除**（``REDACTED_SETTINGS``）。原先这里导的是访问令牌哈希，
+那玩意儿是 256-bit 全随机值的摘要，泄了也猜不出来，导出无害。换成口令登录后
+这个前提不成立了：Argon2id 哈希是**离线爆破的直接靶子**，而 F24 的产物恰恰是
+用户会下载下来、可能丢进网盘或微信传出去的文件。恢复时重新设一次口令即可
+（``uv run python -m app.scripts.set_password``），没有实际损失。
 """
 
 from __future__ import annotations
@@ -14,11 +20,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.deps import get_db
+from app.core.deps import PASSWORD_HASH_KEY, get_db
 from app.db.models import (
     ApiKey,
     CardQuote,
     Category,
+    CategoryRule,
     Checkin,
     Edge,
     File,
@@ -35,6 +42,9 @@ from app.db.models import (
 )
 
 router = APIRouter(prefix="/export", tags=["数据导出"])
+
+#: 这些 settings 键不进快照。理由见模块 docstring。
+REDACTED_SETTINGS = frozenset({PASSWORD_HASH_KEY})
 
 
 def _proj(p: Project) -> dict:
@@ -201,6 +211,20 @@ def export_snapshot(db: Session = Depends(get_db)) -> dict:
         "edges": _all(Edge, _edge),
         "card_quotes": _all(CardQuote, _quote),
         "flashcards": _all(Flashcard, _flashcard),
+        "category_rules": _all(
+            CategoryRule,
+            lambda r: {
+                "id": r.id,
+                "project_id": r.project_id,
+                "match_on": r.match_on,
+                "kind": r.kind,
+                "pattern": r.pattern,
+                "category": r.category,
+                "enabled": r.enabled,
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
+            },
+        ),
         "api_keys": [
             {
                 "id": k.id,
@@ -230,5 +254,6 @@ def export_snapshot(db: Session = Depends(get_db)) -> dict:
         "settings": [
             {"k": s.k, "v": s.v, "updated_at": s.updated_at}
             for s in db.scalars(select(Setting).order_by(Setting.k))
+            if s.k not in REDACTED_SETTINGS
         ],
     }

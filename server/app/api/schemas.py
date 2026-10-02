@@ -11,7 +11,9 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.security import validate_password_strength
 
 ProjectType = Literal["graph", "recite"]
 AlignMode = Literal["llm", "regular"]
@@ -123,6 +125,23 @@ class PieceProgressIn(BaseModel):
     client_ts: datetime
 
 
+class PairSplitIn(BaseModel):
+    """把一个段落对拆成两个。两半中英文都由客户端算好（F18 结构化编辑）。"""
+
+    pair_key: str
+    zh_a: str = Field(min_length=1)
+    en_a: str = Field(min_length=1)
+    zh_b: str = Field(min_length=1)
+    en_b: str = Field(min_length=1)
+
+
+class PairMergeIn(BaseModel):
+    """把相邻两个段落对合并成一个。``with_key`` 必须与 ``pair_key`` 相邻（F18）。"""
+
+    pair_key: str
+    with_key: str
+
+
 # ==========================================================================
 # 加工任务
 # ==========================================================================
@@ -207,3 +226,60 @@ class PlanListOut(PlanOut):
 
     days_until: int | None = None
     overdue: bool = False
+
+
+# ==========================================================================
+# 访问口令登录（单用户免账号，决策 D-01 / ADR-0009）
+# ==========================================================================
+class AuthStateOut(BaseModel):
+    """免鉴权的准入状态探测。
+
+    客户端靠它决定首屏是「创建口令」还是「输入口令」—— 两者的区别只是
+    ``POST /auth/setup`` 与 ``POST /auth/login``，不必靠错误码反推。
+    """
+
+    password_set: bool
+
+
+class PasswordIn(BaseModel):
+    """新口令输入。
+
+    强度校验放在**这里**（pydantic 字段校验器）而不是 ``hash_password`` 里：
+    在路由函数体里抛 ``ValueError`` 会变成 500，那是服务器错误不是客户端错误。
+    走校验器则自动 422，且 ``ctx`` 里的异常对象由 ``jsonable_errors`` 兜住
+    （见 ``app/core/errors.py`` 里那个 422 序列化的坑）。
+    """
+
+    password: str = Field(min_length=1, max_length=1024)
+
+    @field_validator("password")
+    @classmethod
+    def _strength(cls, v: str) -> str:
+        validate_password_strength(v)
+        return v
+
+
+class PasswordChangeIn(BaseModel):
+    """改口令输入。``old_password`` 只校验非空 —— 强度是**当前**口令的事，
+    强制它满足现行强度规则会让「弱口令时代设的旧口令」永远改不了。
+    """
+
+    old_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=1, max_length=1024)
+
+    @field_validator("new_password")
+    @classmethod
+    def _strength(cls, v: str) -> str:
+        validate_password_strength(v)
+        return v
+
+
+class SessionOut(BaseModel):
+    """登录/创建口令成功后下发的会话令牌。
+
+    令牌是 HMAC 签名（不是随机串），因此服务端无需会话表；它的有效期由
+    签发时的 TTL 决定，改口令会让它立刻失效。**只在响应里出现，不写日志。**
+    """
+
+    session_token: str
+    expires_at: datetime

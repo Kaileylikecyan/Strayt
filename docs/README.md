@@ -39,3 +39,6 @@ ADR 只记**决策与理由**，不记过程。当前：
 - [0006 图谱草稿存 results_json、确认后擦除重建](adr/0006-graph-draft-in-results-json-and-wipe-rebuild.md)
 - [0007 文件去重以 (project_id, sha256) 为界](adr/0007-file-dedup-scope-per-project.md)
 - [0008 加工任务绑主事件循环调度、启动回收孤儿任务](adr/0008-bind-main-loop-and-recover-orphan-jobs.md)
+- [0009 口令登录 + 会话令牌由口令哈希派生签名](adr/0009-password-login-and-hash-derived-session-token.md)
+- [0010 分类规则优先级用显式 priority 列](adr/0010-category-rule-priority-column.md)
+- [0011 服务商注册表唯一真源 + 自定义端点边界](adr/0011-provider-registry-single-source-and-custom-endpoint.md)

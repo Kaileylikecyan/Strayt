@@ -16,8 +16,10 @@ class ErrorCode:
     """稳定错误码。客户端据此分支。"""
 
     # 准入
-    TOKEN_MISSING = "token_missing"
-    TOKEN_INVALID = "token_invalid"
+    UNAUTHORIZED = "unauthorized"
+    PASSWORD_NOT_SET = "password_not_set"
+    PASSWORD_ALREADY_SET = "password_already_set"
+    PASSWORD_WRONG = "password_wrong"
     # 通用
     VALIDATION = "validation"
     NOT_FOUND = "not_found"
@@ -88,8 +90,8 @@ async def http_error_handler(_request: Request, exc: HTTPException) -> JSONRespo
         return JSONResponse(status_code=exc.status_code, content=exc.to_body())
     code = {
         400: ErrorCode.VALIDATION,
-        401: ErrorCode.TOKEN_INVALID,
-        403: ErrorCode.TOKEN_INVALID,
+        401: ErrorCode.UNAUTHORIZED,
+        403: ErrorCode.UNAUTHORIZED,
         404: ErrorCode.NOT_FOUND,
         409: ErrorCode.CONFLICT,
         422: ErrorCode.VALIDATION,
@@ -98,3 +100,28 @@ async def http_error_handler(_request: Request, exc: HTTPException) -> JSONRespo
         status_code=exc.status_code,
         content={"error": {"code": code, "message": str(exc.detail)}},
     )
+
+
+def jsonable_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把 pydantic 的 ``exc.errors()`` 洗成能直接 ``json.dumps`` 的结构。
+
+    必须洗：``Field(min_length=...)`` 这类约束失败时 ``ctx`` 里是数字，序列化的动；
+    但**自定义校验器抛的 ``ValueError`` 会被 pydantic 原样塞进 ``ctx["error"]``**，
+    那是活的异常对象，``json.dumps`` 直接 ``TypeError``。症状很难认：
+    请求体非法本该回 422，实际却是 500，而且日志里只有一句
+    ``Object of type ValueError is not JSON serializable``。
+
+    所以这里逐层递归：dict / list / tuple 展开，其余非 JSON 原生类型退化成字符串。
+    校验器作者不用为这件事操心。
+    """
+    return [_plain(v) for v in errors]
+
+
+def _plain(v: Any) -> Any:
+    if v is None or isinstance(v, (str, int, float, bool)):
+        return v
+    if isinstance(v, dict):
+        return {str(k): _plain(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple, set)):
+        return [_plain(x) for x in v]
+    return str(v)

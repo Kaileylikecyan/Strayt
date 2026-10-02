@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.routers import auth as auth_router_mod
 from app.api.routers import export as export_router_mod
 from app.api.routers import files as files_router_mod
 from app.api.routers import graph as graph_router_mod
@@ -27,7 +28,13 @@ from app.api.routers import settings as settings_router_mod
 from app.api.routers import sync as sync_router_mod
 from app.core.config import get_settings
 from app.core.deps import AuthDep
-from app.core.errors import AppError, ErrorCode, app_error_handler, http_error_handler
+from app.core.errors import (
+    AppError,
+    ErrorCode,
+    app_error_handler,
+    http_error_handler,
+    jsonable_errors,
+)
 from app.jobs.engine import recover_orphaned_jobs, run_manager
 
 API_PREFIX = "/api/v1"
@@ -64,9 +71,18 @@ def create_app() -> FastAPI:
     )
 
     # 移动端网页走同源部署时不需要 CORS；这里放开是为了开发期 Vite 跨端口调试。
+    #
+    # Tauri 的 origin 分平台，**三个都要写上**，少一个桌面端就 `failed to fetch`：
+    #   - Windows   → `http://tauri.localhost`（WebView2 用 http 模拟自定义协议以满足同源策略）
+    #   - macOS/Linux → `tauri://localhost`
+    #   - devUrl    → `http://127.0.0.1:5174`（已被上面的 localhost/127.0.0.1 分支覆盖）
+    # 只写 `tauri://localhost` 会让 Windows 桌面端完全连不上服务端 —— 而报错只发生在
+    # 客户端侧（`failed to fetch`），服务端日志干干净净，极易误判成"服务没起"。
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|tauri://localhost)$",
+        allow_origin_regex=r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?"
+        r"|tauri://localhost"
+        r"|http://tauri\.localhost)$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -83,7 +99,9 @@ def create_app() -> FastAPI:
                 "error": {
                     "code": ErrorCode.VALIDATION,
                     "message": "请求参数不合法",
-                    "detail": exc.errors(),
+                    # 必须过 jsonable_errors：自定义校验器抛的 ValueError 会留在
+                    # errors() 的 ctx 里，直接序列化会 500 而不是回 422
+                    "detail": jsonable_errors(exc.errors()),
                 }
             },
         )
@@ -96,6 +114,12 @@ def create_app() -> FastAPI:
             "server_name": settings.server_name,
             "schema_version": settings.snapshot_schema_version,
         }
+
+    # 准入本身免鉴权（否则「还没登录」就无法发请求登录）。
+    # `/auth/password` 例外 —— 它挂在 router2 上并单独带 AuthDep，因为改口令必须
+    # 证明身份。参见 app/api/routers/auth.py 的模块说明。
+    app.include_router(auth_router_mod.router, prefix=API_PREFIX)
+    app.include_router(auth_router_mod.router2, prefix=API_PREFIX, dependencies=[AuthDep])
 
     # 鉴权挂在 include_router 层而不是各路由的 dependencies 上：
     # 新增路由只要 include 进来就自动受保护，不可能「忘了加」。

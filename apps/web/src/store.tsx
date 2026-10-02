@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { SyncSnapshot, WriteOp, Writables } from "@strayt/sync-engine";
 import { SyncFlushError } from "@strayt/sync-engine";
+import { createApiClient } from "@strayt/api-client";
 import { createAppApi, isNetworkError, type AppApi, type AppDomain } from "./api";
 import { clearConfig, loadConfig, saveConfig, type ServerConfig } from "./config";
 
@@ -28,9 +29,14 @@ interface AppContextValue {
   syncState: SyncState;
   pending: number;
   lastError: string | null;
-  testConnection: (baseUrl: string, token: string) => Promise<void>;
+  /** 探活 + 查是否已设口令。只做只读探测，不建长连接。 */
+  probeServer: (baseUrl: string) => Promise<{ ok: boolean; passwordSet: boolean }>;
+  /** 用口令换会话令牌（登录/创建口令的公共尾巴）。 */
+  authenticate: (baseUrl: string, password: string, mode: "login" | "setup") => Promise<void>;
   connect: (config: ServerConfig) => Promise<void>;
   disconnect: () => void;
+  /** 改口令。换完服务端会作废旧令牌，所以这里顺带换成新令牌。 */
+  changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
   refresh: () => Promise<void>;
   flushNow: () => Promise<void>;
   save: (input: SaveInput) => Promise<"direct" | "queued" | "error">;
@@ -106,15 +112,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
   }, [config]);
 
-  const testConnection = useCallback(async (baseUrl: string, token: string) => {
-    const probe = createAppApi({ baseUrl: baseUrl.replace(/\/+$/, ""), token });
-    const health = await probe.client.health();
-    if (!health.ok) throw new Error("服务器未就绪");
-    if (typeof health.schema_version === "undefined") {
-      // /health 不暴露 schema_version 也不影响：能连通即可
-    }
-  }, []);
-
   const connect = useCallback(
     async (next: ServerConfig) => {
       const built = createAppApi(next);
@@ -136,6 +133,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     },
     [],
+  );
+
+  const probeServer = useCallback(async (baseUrl: string) => {
+    const base = baseUrl.replace(/\/+$/, "");
+    // 探测阶段还没有令牌，用 public 客户端即可：/health 与 /auth/state 都免鉴权。
+    const probe = createApiClient({ baseUrl: base, sessionToken: "" });
+    const health = await probe.health();
+    if (!health.ok) throw new Error("服务器未就绪");
+    const state = await probe.request<{ password_set: boolean }>("/api/v1/auth/state", { public: true });
+    return { ok: true, passwordSet: state.password_set };
+  }, []);
+
+  const authenticate = useCallback(
+    async (baseUrl: string, password: string, mode: "login" | "setup") => {
+      const base = baseUrl.replace(/\/+$/, "");
+      const probe = createApiClient({ baseUrl: base, sessionToken: "" });
+      const path = mode === "setup" ? "/api/v1/auth/setup" : "/api/v1/auth/login";
+      const res = await probe.request<{ session_token: string; expires_at: string }>(path, {
+        method: "POST",
+        public: true,
+        body: { password },
+      });
+      await connect({ baseUrl: base, sessionToken: res.session_token });
+    },
+    [connect],
+  );
+
+  /** 改口令。服务端换完口令就作废旧令牌，所以成功后必须整体重连，
+   *  否则用户会被自己刚改的口令锁在外面 —— 这是改密路径最容易漏的一步。 */
+  const changePassword = useCallback(
+    async (oldPassword: string, newPassword: string) => {
+      const current = apiRef.current;
+      const cur = config;
+      if (!current || !cur) throw new Error("尚未登录");
+      const res = await current.client.request<{ session_token: string; expires_at: string }>(
+        "/api/v1/auth/password",
+        { method: "POST", body: { old_password: oldPassword, new_password: newPassword } },
+      );
+      await connect({ baseUrl: cur.baseUrl, sessionToken: res.session_token });
+    },
+    [config, connect],
   );
 
   const disconnect = useCallback(() => {
@@ -272,9 +310,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     syncState,
     pending: currentApi?.engine.pendingCount() ?? 0,
     lastError,
-    testConnection,
+    probeServer,
+    authenticate,
     connect,
     disconnect,
+    changePassword,
     refresh,
     flushNow,
     save,

@@ -1,0 +1,36 @@
+{
+  "name": "@strayt/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tauri v2 桌面端：电脑端资料上传 + 完整学习。页面与网页端同源（复用 apps/web），只多一层原生窗口外壳。",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.5.0",
+    "@strayt/api-client": "*",
+    "@strayt/sync-engine": "*",
+    "@strayt/tokens": "*",
+    "@strayt/ui": "*",
+    "@tauri-apps/api": "^2.12.0",
+    "antd": "^5.22.0",
+    "dayjs": "^1.11.13",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.8.3",
+    "vite": "^6.2.0"
+  }
+}

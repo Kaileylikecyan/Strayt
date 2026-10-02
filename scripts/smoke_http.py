@@ -11,9 +11,12 @@
 
 用法（服务端已在 8000 端口跑着）::
 
-    $env:STRAYT_TOKEN = "<访问令牌>"          # 不要把令牌写进文件/提交
+    $env:STRAYT_PASSWORD = "<访问口令>"       # 不要把口令写进文件/提交
     uv run --project server python scripts\\smoke_http.py
     uv run --project server python scripts\\smoke_http.py --keep   # 保留项目便于人工检查
+
+鉴权跟客户端走同一条路：``/auth/login`` 换会话令牌，再拿它当 Bearer 用（ADR-0009）。
+所以这个脚本顺带也验了「口令能换到可用会话」这条链路。
 
 会在本地 dev 库里建一个临时项目并在结束时删掉（进回收站）。
 """
@@ -28,11 +31,189 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
 PDF = REPO / "server" / "fixtures" / "daoyouci.pdf"
+
+
+def run_graph_cases(
+    call: Callable[..., Any],
+    check: Callable[[bool, str], None],
+) -> None:
+    """F12 图谱与一级分类规则的 HTTP 级验证（不调 LLM，不跑抽取任务）。
+
+    只打协议面：分类规则 CRUD（含空 pattern 挡回、非法 regex 挡回）、以及
+    ``node_category`` 弱同步写实体能不能按 ``node_id`` 定位。
+    """
+    gid = call(
+        "POST",
+        "/api/v1/projects",
+        {
+            "name": f"冒烟·图谱E2E {datetime.now(timezone.utc).strftime('%m%d-%H%M%S')}",
+            "type": "graph",
+        },
+    )["id"]
+    print(f"\n[G1] 建图谱项目 {gid[:8]}…")
+
+    try:
+        call(
+            "PUT",
+            f"/api/v1/projects/{gid}/category-rules",
+            {
+                "rules": [
+                    {
+                        "match_on": "file_name",
+                        "kind": "prefix",
+                        "pattern": "高中数学",
+                        "category": "高中数学",
+                        "enabled": True,
+                    },
+                    {
+                        "match_on": "unit_title",
+                        "kind": "regex",
+                        "pattern": "^函数",
+                        "category": "高中数学",
+                        "enabled": True,
+                    },
+                ]
+            },
+        )
+        got = call("GET", f"/api/v1/projects/{gid}/category-rules")
+        check(len(got) == 2, f"规则应有 2 条：{got}")
+        check(all(r["id"] for r in got), "规则没落 id")
+        check(
+            got[0]["pattern"] == "高中数学" and got[0]["enabled"] is True,
+            f"规则回读不对：{got[0]}",
+        )
+        print(f"[G2] 规则整表写入并回读 {len(got)} 条（含 id/优先级）")
+
+        # 整表覆盖：再存一条应该只剩一条
+        call(
+            "PUT",
+            f"/api/v1/projects/{gid}/category-rules",
+            {
+                "rules": [
+                    {
+                        "match_on": "file_name",
+                        "kind": "contains",
+                        "pattern": "英语",
+                        "category": "英语",
+                    }
+                ]
+            },
+        )
+        got2 = call("GET", f"/api/v1/projects/{gid}/category-rules")
+        check(len(got2) == 1, f"整表覆盖语义不对，剩 {len(got2)} 条")
+        print("[G3] 整表覆盖语义正确（旧规则被清掉）")
+
+        for bad, why in (
+            (
+                {
+                    "match_on": "file_name",
+                    "kind": "prefix",
+                    "pattern": "  ",
+                    "category": "X",
+                },
+                "空 pattern",
+            ),
+            (
+                {
+                    "match_on": "file_name",
+                    "kind": "regex",
+                    "pattern": "([",
+                    "category": "X",
+                },
+                "非法 regex",
+            ),
+            (
+                {
+                    "match_on": "file_name",
+                    "kind": "prefix",
+                    "pattern": "a",
+                    "category": " ",
+                },
+                "空 category",
+            ),
+            (
+                {"match_on": "nope", "kind": "prefix", "pattern": "a", "category": "X"},
+                "非法 match_on",
+            ),
+        ):
+            rejected = False
+            try:
+                call("PUT", f"/api/v1/projects/{gid}/category-rules", {"rules": [bad]})
+            except SystemExit:
+                rejected = True
+            check(rejected, f"{why} 居然没被挡下")
+        print("[G4] 空 pattern / 非法 regex / 空分类名 / 非法 match_on 全被挡（4xx）")
+
+        call("PUT", f"/api/v1/projects/{gid}/category-rules", {"rules": []})
+        empty = call("GET", f"/api/v1/projects/{gid}/category-rules")
+        check(empty == [], f"清空规则应得空列表：{empty}")
+        print("[G5] 规则可清空（回到纯模型判定）")
+
+        # node_category 弱同步写实体：目标节点不存在 / 分类不存在都得被挡，
+        # 不能让 FK 把别的项目的分类拉进来（sync.py 的两道闸）
+        def push_node_category(entity_id: str, category_id: str) -> dict:
+            return call(
+                "POST",
+                "/api/v1/sync/batch",
+                {
+                    "ops": [
+                        {
+                            "op_id": str(uuid.uuid4()),
+                            "entity": "node_category",
+                            "entity_id": entity_id,
+                            "patch": {"category_id": category_id},
+                            "client_ts": (
+                                datetime.now(timezone.utc) + timedelta(seconds=5)
+                            ).isoformat(),
+                        }
+                    ]
+                },
+            )["results"][0]
+
+        r_missing_node = push_node_category("does-not-exist", "whatever")
+        check(
+            r_missing_node["status"] == "skipped",
+            f"给不存在的节点改分类应 skipped：{r_missing_node}",
+        )
+        print(f"[G6] node_category 对未知 node_id → {r_missing_node['status']}")
+
+        r_missing_cat = push_node_category("also-missing", "no-such-category")
+        check(
+            r_missing_cat["status"] in {"skipped", "error"},
+            f"分类不存在应被拒：{r_missing_cat}",
+        )
+        print(f"[G7] node_category 对不存在的分类 → {r_missing_cat['status']}")
+
+        # 字段白名单：node_category 不许改别的字段
+        r_bad_field = call(
+            "POST",
+            "/api/v1/sync/batch",
+            {
+                "ops": [
+                    {
+                        "op_id": str(uuid.uuid4()),
+                        "entity": "node_category",
+                        "entity_id": "any",
+                        "patch": {"name": "偷偷改名"},
+                        "client_ts": (
+                            datetime.now(timezone.utc) + timedelta(seconds=5)
+                        ).isoformat(),
+                    }
+                ]
+            },
+        )["results"][0]
+        check(r_bad_field["status"] == "error", f"越权字段应被拒：{r_bad_field}")
+        print(f"[G8] node_category 改非白名单字段 → {r_bad_field['status']}")
+    finally:
+        call("DELETE", f"/api/v1/projects/{gid}")
+        print(f"[G9] 清理图谱临时项目 {gid[:8]}…")
 
 
 def main() -> int:
@@ -40,19 +221,51 @@ def main() -> int:
     ap.add_argument(
         "--url", default=os.environ.get("STRAYT_URL", "http://127.0.0.1:8000")
     )
-    ap.add_argument("--token", default=os.environ.get("STRAYT_TOKEN", ""))
+    ap.add_argument("--password", default=os.environ.get("STRAYT_PASSWORD", ""))
     ap.add_argument("--keep", action="store_true", help="结束后不删项目（留给人看）")
+    ap.add_argument(
+        "--graph",
+        action="store_true",
+        help="额外跑 F12 图谱用例（建图谱项目 + 分类规则 CRUD + node_category 弱同步写）",
+    )
     args = ap.parse_args()
 
-    if not args.token:
-        print("缺访问令牌：设环境变量 STRAYT_TOKEN 或传 --token", file=sys.stderr)
+    if not args.password:
+        print(
+            "缺访问口令：设环境变量 STRAYT_PASSWORD 或传 --password", file=sys.stderr
+        )
         return 2
     if not PDF.exists():
         print(f"样板 PDF 不在：{PDF}（被 .gitignore 排除，需自备）", file=sys.stderr)
         return 2
 
     base = args.url.rstrip("/")
-    auth = {"Authorization": f"Bearer {args.token}"}
+
+    # 免鉴权客户端：探活 + 换会话令牌。login 失败要报得清楚 —— 最常见的原因是
+    # 服务端还没设过口令（首次接入要走 /auth/setup），而这里拿不到明文口令。
+    def call_public(method: str, path: str, body: object | None = None) -> object:
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(
+            base + path,
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json"} if data else {},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as res:
+                payload = res.read()
+                return json.loads(payload) if payload else None
+        except urllib.error.HTTPError as e:
+            raise SystemExit(
+                f"{path} 返回 {e.code}：{e.read().decode(errors='replace')[:300]}"
+            ) from e
+
+    call_public("GET", "/api/v1/auth/state")
+    session = call_public("POST", "/api/v1/auth/login", {"password": args.password})
+    token = session["session_token"] if isinstance(session, dict) else ""
+    if not token:
+        raise SystemExit("登录成功但没拿到 session_token，服务端行为异常")
+    auth = {"Authorization": f"Bearer {token}"}
 
     def call(
         method: str,
@@ -221,6 +434,154 @@ def main() -> int:
             f"LWW 失败，旧写入覆盖了新值：{kept['zh']}",
         )
         print(f"[11] 旧写入未覆盖：{kept['zh'][:30]}…")
+
+        # F18 的 split / merge：两者都会换掉 pair_key，客户端得能按新 key 找到原句
+        if len(pairs) >= 2:
+            a, b = pairs[0], pairs[1]
+            check(
+                abs(a["seq"] - b["seq"]) == 1,
+                f"[12] 前两对不相邻，无法测合并：{a['seq']},{b['seq']}",
+            )
+
+            def cut(s: str) -> tuple[str, str]:
+                """从中点切成两半，保证两半都非空（服务端对空半边是 422）。"""
+                s = (s or "").strip()
+                if len(s) < 2:
+                    return s, s
+                m = len(s) // 2
+                return s[:m], s[m:]
+
+            zh_a, zh_b = cut(a["zh"])
+            en_a, en_b = cut(a["en"])
+            orig_keys = {x["pair_key"] for x in pairs}
+            # 端点返回的是「整篇重编号后的列表」，不是只有拆出来那两句
+            split_res = call(
+                "POST",
+                f"/api/v1/projects/{pid}/pieces/{p0['id']}/pairs/split",
+                {
+                    "pair_key": a["pair_key"],
+                    "zh_a": zh_a,
+                    "en_a": en_a,
+                    "zh_b": zh_b,
+                    "en_b": en_b,
+                },
+            )
+            check(
+                len(split_res) == len(pairs) + 1,
+                f"拆一句应让整篇 +1 行：{len(pairs)} → {len(split_res)}",
+            )
+            check(
+                [x["seq"] for x in split_res] == list(range(len(split_res))),
+                "拆句后 seq 必须稠密唯一（撞 seq 会让背诵舱排序错位）："
+                f"{[x['seq'] for x in split_res]}",
+            )
+            new_rows = [x for x in split_res if x["pair_key"] not in orig_keys]
+            check(len(new_rows) == 2, f"应有 2 个新对：{new_rows}")
+            check(
+                a["pair_key"] not in {x["pair_key"] for x in split_res},
+                "原 key 还在（会重影）",
+            )
+            check(
+                all(x["manually_edited"] for x in new_rows),
+                "拆出来的新对没标人工编辑 → 覆盖重跑会被冲掉",
+            )
+            check(
+                all(x["loc_page"] == a["loc_page"] for x in new_rows),
+                f"拆分丢了 loc_page（出处回看会瞎）：{new_rows}",
+            )
+            check(
+                {x["zh"] for x in new_rows} == {zh_a, zh_b},
+                f"拆出来的两半内容不对：{new_rows}",
+            )
+            new_keys = [x["pair_key"] for x in new_rows]
+            print(
+                "[12] F18 split：整篇 +1 行，seq 稠密唯一，新对 key 全换且继承 loc_page"
+            )
+
+            after_split = call("GET", f"/api/v1/projects/{pid}/pieces/{p0['id']}/pairs")
+            check(
+                len(after_split) == len(pairs) + 1,
+                f"拆一句应 +1 行：{len(pairs)} → {len(after_split)}",
+            )
+            seqs = [x["seq"] for x in after_split]
+            check(
+                seqs == list(range(len(after_split))),
+                f"拆句后段序号不连续（应 0..n-1）：{seqs}",
+            )
+            print(
+                f"[13] 拆后 {len(after_split)} 行，seq 0..{len(after_split) - 1} 连续"
+            )
+
+            merged = call(
+                "POST",
+                f"/api/v1/projects/{pid}/pieces/{p0['id']}/pairs/merge",
+                {"pair_key": new_keys[0], "with_key": new_keys[1]},
+            )
+            check(
+                len(merged) == len(pairs),
+                f"拆(+1)再合(-1) 应回到原行数 {len(pairs)}，实得 {len(merged)}",
+            )
+            check(
+                [x["seq"] for x in merged] == list(range(len(merged))),
+                f"合并后 seq 必须稠密唯一：{[x['seq'] for x in merged]}",
+            )
+            new_merged = next(x for x in merged if x["pair_key"] not in orig_keys)
+            check(
+                new_merged["zh"] == (zh_a + zh_b).strip()
+                and new_merged["en"] == (en_a + " " + en_b).strip(),
+                f"合并后内容不是两段拼接：{new_merged}",
+            )
+            check(
+                new_merged["manually_edited"],
+                "合并出来的新句没标人工编辑 → 覆盖重跑会被冲掉",
+            )
+            print(
+                "[14] F18 merge：整篇 -1 行，seq 仍稠密唯一，中文首尾相接、英文空格相连"
+            )
+
+            final_pairs = call("GET", f"/api/v1/projects/{pid}/pieces/{p0['id']}/pairs")
+            check(
+                len(final_pairs) == len(pairs),
+                f"拆→合应回到原行数：{len(final_pairs)} vs {len(pairs)}",
+            )
+            seqs2 = [x["seq"] for x in final_pairs]
+            check(
+                seqs2 == list(range(len(final_pairs))),
+                f"合并后 seq 不连续：{seqs2}",
+            )
+            check(
+                new_merged["loc_page"] == a["loc_page"],
+                "合并丢了 loc_page（出处回看会瞎）",
+            )
+            print(
+                f"[15] 拆→合回到 {len(final_pairs)} 行，seq 0..{len(final_pairs) - 1} 连续，loc_page 保住"
+            )
+
+            # 不相邻的两个不许合并，得挡掉而不是静默改数据
+            near = final_pairs[0]
+            far_pair = next(
+                (x for x in final_pairs if abs(x["seq"] - near["seq"]) > 1), None
+            )
+            if far_pair:
+                rejected = False
+                try:
+                    call(
+                        "POST",
+                        f"/api/v1/projects/{pid}/pieces/{p0['id']}/pairs/merge",
+                        {
+                            "pair_key": near["pair_key"],
+                            "with_key": far_pair["pair_key"],
+                        },
+                    )
+                except SystemExit:
+                    rejected = True
+                check(rejected, "合并不相邻的两句居然没报错")
+                print("[16] 合并不相邻两句被挡（4xx）")
+        else:
+            print("[12~16] 对句不足 2 组，跳过 F18 split/merge 用例")
+
+        if args.graph:
+            run_graph_cases(call, check)
     finally:
         if args.keep:
             print(f"\n--keep：项目 {pid} 保留，可去网页端查看")

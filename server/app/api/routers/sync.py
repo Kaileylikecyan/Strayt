@@ -41,6 +41,7 @@ from app.core.config import get_settings
 from app.core.deps import get_db
 from app.core.errors import ErrorCode, bad_request
 from app.db.models import (
+    Category,
     Checkin,
     File,
     Goal,
@@ -63,6 +64,7 @@ _WRITABLE: dict[str, tuple[type, tuple[str, ...]]] = {
     "plan": (Plan, ("title", "due_date", "status", "sort_order")),
     "goal": (Goal, ("exam_date",)),
     "node_mastery": (Node, ("mastery",)),
+    "node_category": (Node, ("category_id",)),
 }
 
 
@@ -242,6 +244,17 @@ def _apply_one(op: OpIn, db: Session) -> OpResult:
             reason="服务端版本更新，丢弃本次写入",
             server_updated_at=row.updated_at,
         )
+
+    # node_category：目标分类必须存在且属于同一项目，否则 FK 会拉进别的项目
+    if op.entity == "node_category" and "category_id" in op.patch:
+        cat_id = op.patch["category_id"]
+        cat = db.get(Category, cat_id) if cat_id else None
+        if cat is None or cat.project_id != row.project_id:
+            return OpResult(
+                op_id=op.op_id,
+                status="error",
+                reason="目标分类不存在或不属于当前项目",
+            )
 
     for k, v in op.patch.items():
         setattr(row, k, v)

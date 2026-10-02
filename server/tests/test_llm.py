@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import get_args
 
 import httpx
 import pytest
@@ -301,9 +302,80 @@ def test_probe_never_raises(monkeypatch) -> None:
 # ==========================================================================
 # 注册表与价目
 # ==========================================================================
-def test_registry_has_six_providers_from_doc() -> None:
-    """文档 §10 点名 6 家，少一家就是功能缺失。"""
-    assert set(PROVIDERS) == {"deepseek", "qwen", "glm", "openai", "anthropic", "gemini"}
+def test_registry_keeps_the_six_providers_from_doc() -> None:
+    """文档 §10 点名 6 家，少一家就是功能缺失。
+
+    在这 6 家**之外**补了国内主流几家（月之暗面 / 豆包 / 硅基流动 / MiniMax / 混元）：
+    §10 那张表是写文档时的选型基线，不是限制清单，个人自用时用户手里通常
+    就是这几家的 Key。见 ``registry.py`` 模块注释。
+    """
+    for k in ("deepseek", "qwen", "glm", "openai", "anthropic", "gemini"):
+        assert k in PROVIDERS, f"§10 点名的 {k} 不在注册表里"
+
+
+def test_registry_covers_mainland_china_providers() -> None:
+    """国内主流几家必须在，且都复用 OpenAI 兼容实现（否则要单独写协议适配）。
+
+    缺一家就是「用户手里有 Key 但界面里选不到」。这种缺失在旧版真实发生过：
+    ``settings.py`` 手写的 Provider 字面量与注册表不同步（anthropic/gemini
+    存不进去、moonshot/doubao 存得进却调不通）。
+    """
+    for k in ("deepseek", "qwen", "glm", "moonshot", "doubao", "siliconflow", "minimax", "hunyuan"):
+        assert k in PROVIDERS, f"国内主流厂商 {k} 缺接入"
+        assert PROVIDERS[k].cls is OpenAICompatProvider, f"{k} 应复用 OpenAI 兼容实现"
+        assert PROVIDERS[k].region == "国内", f"{k} 应归到国内分组"
+
+
+def test_api_key_provider_literal_is_derived_from_registry() -> None:
+    """设置页的 Provider 字面量必须**从注册表派生**，不能手写第二份。
+
+    手写导致过两边漂移，且漂移方向很坏：真要用 Key 的两家存不进去，
+    存得进去的两家调用时才炸。这个用例让漂移立刻失败。
+    """
+    from app.api.routers.settings import Provider
+
+    assert set(get_args(Provider)) == set(PROVIDERS)
+
+
+def test_custom_endpoint_is_the_only_editable_base_url() -> None:
+    """只有自定义端点允许自带 base_url。
+
+    放开给固定端点的风险：把某个 Key 的地址指到别的主机，
+    ``Authorization`` 头就会跟着一起发过去。
+    """
+    editable = {k for k, s in PROVIDERS.items() if s.base_url_editable}
+    assert editable == {"openai_compatible"}
+    for k, s in PROVIDERS.items():
+        if k not in editable:
+            assert s.base_url, f"{k} 是固定端点厂商，base_url 不能为空"
+
+
+def test_custom_endpoint_requires_base_url() -> None:
+    """自定义端点漏填地址要明确报错，不能拿空串拼出 `/chat/completions`。"""
+    with pytest.raises(LLMError) as e:
+        build_provider("openai_compatible", "sk-x", "my-model")
+    assert e.value.kind == LLMErrorKind.BAD_REQUEST
+    assert "Base URL" in str(e.value.detail)
+
+    p = build_provider(
+        "openai_compatible", "sk-x", "my-model", base_url="http://127.0.0.1:11434/v1/"
+    )
+    # 尾部斜杠必须被规整掉，否则会拼成 /v1//chat/completions
+    assert p.base_url == "http://127.0.0.1:11434/v1"
+    assert p.model == "my-model"
+
+
+def test_fixed_endpoint_provider_refuses_custom_base_url() -> None:
+    """固定端点的厂商必须拒绝覆盖 base_url。"""
+    with pytest.raises(LLMError) as e:
+        build_provider("deepseek", "sk-x", None, base_url="http://evil.example.com/v1")
+    assert e.value.kind == LLMErrorKind.BAD_REQUEST
+
+
+def test_custom_endpoint_rejects_non_http_url() -> None:
+    with pytest.raises(LLMError) as e:
+        build_provider("openai_compatible", "sk-x", "m", base_url="file:///etc/passwd")
+    assert e.value.kind == LLMErrorKind.BAD_REQUEST
 
 
 def test_deepseek_has_no_vision() -> None:
@@ -319,10 +391,26 @@ def test_deepseek_has_no_vision() -> None:
 
 def test_every_provider_has_default_and_price() -> None:
     for s in PROVIDERS.values():
+        # 自定义端点例外：模型和地址都是用户填的，没有「推荐款」可言。
+        if s.base_url_editable:
+            assert not s.text_models, f"{s.key} 不该预置模型清单（用户自己填）"
+            continue
         assert s.default_text, f"{s.key} 缺默认文本模型"
         if s.supports_vision:
             assert s.default_vision, f"{s.key} 标了视觉却没默认视觉模型"
         assert get_price(s.key, s.default_text)[0] > 0
+
+
+def test_every_real_provider_has_console_url() -> None:
+    """每家真实厂商都要给「去哪拿 Key」的入口。
+
+    国内几家控制台位置很不统一（百炼、方舟、SiliconFlow 差着好几个层级），
+    让用户自己搜是纯粹的摩擦。自定义端点没有控制台，跳过。
+    """
+    for k, s in PROVIDERS.items():
+        if s.base_url_editable:
+            continue
+        assert s.console_url.startswith("https://"), f"{k} 缺控制台链接"
 
 
 def test_unknown_provider_rejected() -> None:

@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@strayt/tokens": ["../../packages/tokens/src/index.ts"],
+      "@strayt/tokens/pixel.css": ["../../packages/tokens/src/pixel.css"],
+      "@strayt/ui": ["../../packages/ui/src/index.ts"],
+      "@strayt/api-client": ["../../packages/api-client/src/index.ts"],
+      "@strayt/sync-engine": ["../../packages/sync-engine/src/index.ts"],
+      "@strayt/web/*": ["../web/src/*"]
+    }
+  },
+  "include": ["src"]
+}

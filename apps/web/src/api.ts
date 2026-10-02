@@ -27,6 +27,16 @@ export function bindDomain(client: StraytApiClient) {
       pieceId: string,
       body: { last_pos: number; recited?: boolean; client_ts: string },
     ) => api.putPieceProgress(client, projectId, pieceId, body),
+    splitPair: (
+      projectId: string,
+      pieceId: string,
+      body: { pair_key: string; zh_a: string; en_a: string; zh_b: string; en_b: string },
+    ) => api.splitPair(client, projectId, pieceId, body),
+    mergePair: (
+      projectId: string,
+      pieceId: string,
+      body: { pair_key: string; with_key: string },
+    ) => api.mergePair(client, projectId, pieceId, body),
 
     getCheckin: (day: string) => api.getCheckin(client, day),
     putCheckin: (body: { date: string; items: string[] }) => api.putCheckin(client, body),
@@ -34,8 +44,12 @@ export function bindDomain(client: StraytApiClient) {
     dailyTodos: (day?: string) => api.dailyTodos(client, day),
 
     listApiKeys: () => api.listApiKeys(client),
-    createApiKey: (body: { provider: string; secret: string; label?: string }) =>
-      api.createApiKey(client, body),
+    createApiKey: (body: {
+      provider: string;
+      secret: string;
+      label?: string;
+      base_url?: string | null;
+    }) => api.createApiKey(client, body),
     testApiKey: (keyId: string) => api.testApiKey(client, keyId),
     deleteApiKey: (keyId: string) => api.deleteApiKey(client, keyId),
     getKv: (key: string) => api.getKv(client, key),
@@ -72,6 +86,9 @@ export function bindDomain(client: StraytApiClient) {
     getMasteryStats: (projectId: string) => api.getMasteryStats(client, projectId),
     setNodeMastery: (nodeId: string, mastery: "no" | "mid" | "yes") =>
       api.setNodeMastery(client, nodeId, mastery),
+    listCategoryRules: (projectId: string) => api.listCategoryRules(client, projectId),
+    putCategoryRules: (projectId: string, rules: api.CategoryRuleIn[]) =>
+      api.putCategoryRules(client, projectId, rules),
     generateFlashcards: (projectId: string) => api.generateFlashcards(client, projectId),
     listFlashcards: (projectId: string, mastery?: "no" | "mid" | "yes") =>
       api.listFlashcards(client, projectId, mastery),
@@ -91,7 +108,10 @@ export interface AppApi {
 }
 
 export function createAppApi(config: ServerConfig): AppApi {
-  const client = createApiClient({ baseUrl: config.baseUrl, token: config.token });
+  const client = createApiClient({
+    baseUrl: config.baseUrl,
+    sessionToken: config.sessionToken,
+  });
   const engine = new SyncEngine({
     api: {
       bootstrap: () => api.fetchBootstrap(client),

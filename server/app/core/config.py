@@ -41,9 +41,10 @@ class Settings(BaseSettings):
     db_pool_recycle: int = 1800
 
     # ---- 安全 ----
-    # 访问令牌哈希用的 pepper。留空则启动时随机生成（重启后旧令牌失效，仅限本地开发）
-    access_token_pepper: str = ""
-    # API Key 加密用的主密钥（Fernet）。生产必须显式配置
+    # 访问口令哈希用 Argon2id（见 app/core/security.py），自带随机盐，**不要**再加 pepper：
+    # pepper 只在「攻击者拿到 DB 但拿不到应用配置」时才有边际收益，而这里两者同机，
+    # 代价却是一个「pepper 丢了 = 口令永久无法验证」的额外故障点。
+    # API Key 加密用的主密钥（Fernet）不能省：它要能解密回来给加工调用。
     secret_key: str = ""
 
     # ---- 存储 ----

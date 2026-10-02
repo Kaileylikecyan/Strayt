@@ -14,10 +14,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.routers.projects import load_project
-from app.api.schemas import CheckinIn, CheckinOut, PairOut, PieceOut, PieceProgressIn
+from app.api.schemas import (
+    CheckinIn,
+    CheckinOut,
+    PairMergeIn,
+    PairOut,
+    PairSplitIn,
+    PieceOut,
+    PieceProgressIn,
+)
 from app.core.deps import get_db
-from app.core.errors import not_found
-from app.db.models import Checkin, Pair, Piece, utcnow
+from app.core.errors import ErrorCode, bad_request, not_found
+from app.db.models import Checkin, Pair, Piece, new_id, utcnow
 
 router = APIRouter(tags=["背诵舱 / 打卡"])
 
@@ -68,6 +76,137 @@ def list_pairs(
             .limit(limit)
         )
     )
+
+
+def _load_pair(db: Session, project_id: str, piece_id: str, pair_key: str) -> Pair:
+    """按稳定 ``pair_key`` 取段落对，并校验属于指定篇目/项目。"""
+    load_project(db, project_id)
+    pair = db.scalar(select(Pair).where(Pair.pair_key == pair_key))
+    if pair is None or pair.piece_id != piece_id:
+        raise not_found("段落对", pair_key)
+    return pair
+
+
+def _renumber_pairs(db: Session, piece_id: str) -> list[Pair]:
+    """把某篇所有段落对按当前 ``seq`` 顺序重新编号为 0..n-1，并返回并好的列表。
+
+    拆分/合并都会制造 seq 空洞或重复，这一步保证 seq 总是稠密连续的，
+    客户端背诵舱按 ``seq`` 渲染才不会错位。
+
+    开头那个 ``flush`` 不能省：``SessionLocal`` 是 ``autoflush=False``（见
+    ``app/db/session.py``），拆分/合并刚 ``add`` 的新对句还挂在 session 里，
+    不先落库这条 SELECT 就查不到它们 —— 结果是新对句带着拆分前的旧 seq 混进来，
+    和重编号过的旧行撞 seq，客户端排序直接错位。
+    """
+    db.flush()
+    rows = list(db.scalars(select(Pair).where(Pair.piece_id == piece_id).order_by(Pair.seq)))
+    for i, p in enumerate(rows):
+        p.seq = i
+        p.updated_at = utcnow()
+    db.commit()
+    for p in rows:
+        db.refresh(p)
+    return rows
+
+
+@router.post(
+    "/projects/{project_id}/pieces/{piece_id}/pairs/split",
+    response_model=list[PairOut],
+    summary="拆分段落对（拆成两个）",
+)
+def split_pair(
+    project_id: str, piece_id: str, body: PairSplitIn, db: Session = Depends(get_db)
+) -> list[Pair]:
+    """把一个 ``(zh, en)`` 段落对按客户端算好的两半内容拆成两个新对。
+
+    F18 结构化编辑：两句/两段并列在一个对里时手动拆开。拆的结果是**两个新的
+    ``pair_key``**（稳定 key 算法与 AGENTS §7 的「人工内容与 AI 内容分区」一致），
+    原对删除。两个新对都标 ``manually_edited``，覆盖重跑时不会被冲掉。
+    """
+    pair = _load_pair(db, project_id, piece_id, body.pair_key)
+    if not (body.zh_a.strip() and body.zh_b.strip() and body.en_a.strip() and body.en_b.strip()):
+        raise bad_request(ErrorCode.VALIDATION, "拆分后的两半中英文都不能为空")
+    # 先把尾部队列整体后移一位，避免与新对产生重复 seq（ix_pairs_piece_seq 非唯一，
+    # seq 相同会导致重排顺序不稳定）
+    tail = list(
+        db.scalars(
+            select(Pair)
+            .where(Pair.piece_id == piece_id, Pair.seq > pair.seq)
+            .order_by(Pair.seq.desc())
+        )
+    )
+    for p in tail:
+        p.seq += 1
+    db.delete(pair)
+    db.flush()
+    sa = Pair(
+        pair_key=new_id(),
+        piece_id=piece_id,
+        seq=pair.seq,
+        zh=body.zh_a,
+        en=body.en_a,
+        loc_page=pair.loc_page,
+        needs_review=pair.needs_review,
+        confidence=pair.confidence,
+        how="merged",
+        manually_edited=True,
+    )
+    sb = Pair(
+        pair_key=new_id(),
+        piece_id=piece_id,
+        seq=pair.seq + 1,
+        zh=body.zh_b,
+        en=body.en_b,
+        loc_page=pair.loc_page,
+        needs_review=pair.needs_review,
+        confidence=pair.confidence,
+        how="merged",
+        manually_edited=True,
+    )
+    db.add_all([sa, sb])
+    return _renumber_pairs(db, piece_id)
+
+
+@router.post(
+    "/projects/{project_id}/pieces/{piece_id}/pairs/merge",
+    response_model=list[PairOut],
+    summary="合并段落对（相邻两个合成一个）",
+)
+def merge_pair(
+    project_id: str, piece_id: str, body: PairMergeIn, db: Session = Depends(get_db)
+) -> list[Pair]:
+    """把相邻两个段落对合并成一个（中文直接拼接，英文用空格连接）。
+
+    F18 结构化编辑：对着背诵舱里断开的对句手动合并。新对拿**新的 ``pair_key``**，
+    标 ``manually_edited``，覆盖重跑不冲。
+    """
+    a = _load_pair(db, project_id, piece_id, body.pair_key)
+    b = _load_pair(db, project_id, piece_id, body.with_key)
+    if abs(a.seq - b.seq) != 1:
+        raise bad_request(ErrorCode.VALIDATION, "只能合并相邻的两个段落对")
+    first, second = sorted([a, b], key=lambda p: p.seq)
+    zh = (first.zh + second.zh).strip()
+    en = (first.en + " " + second.en).strip()
+    if not (zh and en):
+        raise bad_request(ErrorCode.VALIDATION, "合并后的中英文不能为空")
+    db.delete(a)
+    db.delete(b)
+    db.flush()
+    db.add(
+        Pair(
+            pair_key=new_id(),
+            piece_id=piece_id,
+            seq=first.seq,
+            zh=zh,
+            en=en,
+            loc_page=first.loc_page,
+            needs_review=a.needs_review or b.needs_review,
+            confidence=min(a.confidence, b.confidence),
+            how="merged",
+            manually_edited=True,
+        )
+    )
+    return _renumber_pairs(db, piece_id)
 
 
 @router.put(

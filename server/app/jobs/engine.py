@@ -245,7 +245,10 @@ def resolve_aligner(db: Session, project_id: str) -> AlignerBundle:
         return fallback
     try:
         provider = build_provider(
-            key_row.provider, decrypt_secret(key_row.secret_enc), profile.text_model
+            key_row.provider,
+            decrypt_secret(key_row.secret_enc),
+            profile.text_model,
+            base_url=key_row.base_url,
         )
     except Exception as exc:  # 档案配错不该让整份资料加工失败
         log.warning("构造 provider 失败，降级为长度直配：%s", exc)

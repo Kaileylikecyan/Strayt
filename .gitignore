@@ -9,6 +9,9 @@ dist-ssr/
 # ---- Tauri / Rust ----
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
+# Cargo.lock **要入库**：这是可执行应用（不是库），锁住依赖版本才能保证
+# 「同一份代码 → 同一个 exe」。本机走 rsproxy 镜像，锁文件里全是
+# crates.io 的 registry 源，别的机器照着锁文件拉即可，不必本地有镜像。
 **/*.rs.bk
 
 # ---- Python / uv ----

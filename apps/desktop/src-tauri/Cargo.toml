@@ -1,0 +1,27 @@
+[package]
+name = "strayt-desktop"
+version = "0.1.0"
+description = "学习工作台 Strayt 桌面端"
+authors = ["Strayt"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+# Tauri v2 约定：桌面端逻辑放 lib（供移动端/测试复用），main 只做启动
+name = "strayt_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
