@@ -37,6 +37,13 @@ export default defineConfig({
     strictPort: true,
     // 页面在 apps/web/src（apps/desktop 的兄弟目录），Vite 默认只允许 root 内文件
     fs: { allow: [fileURLToPath(new URL("../..", import.meta.url))] },
+    // 必须屏蔽 src-tauri/：里面有 target/（数万条 cargo 产物）与 gen/，
+    // cargo 编译时正在写的 .dll/.exe 会被 Windows 锁住，
+    // chokidar 抛未捕获的 EBUSY 让 vite 整个崩掉（exit 1），
+    // 表现成 Tauri 报「beforeDevCommand terminated with a non-zero status code」。
+    // 症状只在**首次/全量编译**时出现（target 冷、cargo 真的在写盘），
+    // 所以容易误判成端口或配置问题。Rust 侧改动由 tauri 自己 watch，不依赖 vite。
+    watch: { ignored: ["**/src-tauri/**"] },
   },
   envPrefix: ["VITE_", "TAURI_"],
   optimizeDeps: {

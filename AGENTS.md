@@ -22,6 +22,12 @@
 | **缺 Windows SDK 时链接报 `LNK1181: kernel32.lib`** | 看着像 `link.exe` 坏了，其实在 Build Tools 里好好的 —— SDK 的 `um\x64` 不在 `LIB` 里 | 装 SDK：Installer → Build Tools 2022 →「修改」→ 单个组件 → Windows 11 SDK（≥10.0.22621）。验证：`call vcvars64.bat && rustc hello.rs -o hello.exe` |
 | **`tauri build` 报 `Peer disconnected`** | Rust 编译已完成、exe 也出了，但打包阶段从 GitHub 下 WiX 工具链时断 | exe 不受影响，可直接用 `target\release\strayt-desktop.exe`。要安装包就等网络能通 GitHub 重跑，或加 `-- --no-bundle` 只验证编译 |
 | **工具写 stderr 被当成失败** | `$ErrorActionPreference='Stop'` 时，alembic 的 `INFO` 行变 `NativeCommandError`，退出码 0 却报红 | 判成败只看 `$LASTEXITCODE`；调外部命令期间把 `ErrorActionPreference` 降回 `Continue`（`check.ps1` 的 `Invoke-Step` 已这么做） |
+| **`tauri:dev` 报 `beforeDevCommand` 非零退出** | 两种**不同**的原因，日志尾部长得几乎一样。真因在 Vite 的**前面几行**，一定要往上翻：①`Error: Port 5174 is already in use`（上次残留进程没退干净，而 `vite.config.ts` 写了 `strictPort: true`，端口被占就退出；`devUrl` 写死 5174 也不能改 `strictPort`，否则开空窗口）；②`Error: EBUSY: resource busy or locked, watch '...src-tauri\target\debug\deps\*.dll'`（vite 去监听 Rust 构建产物，cargo 正在写的 dll 被 Windows 锁住，chokidar 抛未捕获异常把 vite 整个打挂）。**②只在首次/全量编译时出现**（target 冷、cargo 真在写盘），跑热了不犯，最容易被误判成端口问题 | `vite.config.ts` 的 `server.watch.ignored: ["**/src-tauri/**"]` 屏蔽掉（已在库里，别删）。排查顺序：先 `netstat -ano \| findstr :5174` 看有没有残留，再翻日志顶部找 `error when starting dev server` |
+
+### 两个容易写错的样式坑
+
+- **`check:tokens` 连注释里的 `px` 字面量一起扫**（`scripts/check-tokens.mjs` 按行正则，不过滤注释）。注释里写「约 500px」照样红。写「500（单位同 token 数值）」或直接不提数字。
+- **antd `<Input>` 默认 `width: 100%`**，放进 flex 行会吃满整行，把后面的按钮挤到下一行。必须 `flex: "none"` + 显式宽度。宽度只能用 token 拼：`calc(var(--tok-spaceXl-px) + var(--tok-spaceMd-px))`。顺带：token 档位只有 `spaceXs/Sm/Md/Lg/Xl`，**没有 `spaceXxl`**，写 `var(--tok-spaceXxl-px)` 是被静默忽略的死 CSS（不报错、不生效，也过得了门禁）。
 
 ### 已具备 / 缺失
 
