@@ -180,6 +180,16 @@ class Test重试:
         assert "无法解析" in p.calls[1][-1].content
 
     @pytest.mark.asyncio
+    async def test_feedback_should_include_previous_output_and_real_error(self):
+        """重问要带上「上一次写了什么」+ 真实解析错误，否则模型只会照错一遍。"""
+        p = FakeProvider(["这不是 JSON", _payload()])
+        await _extract(p)
+        second = p.calls[1]
+        assert [m.role for m in second] == ["system", "user", "assistant", "user"]
+        assert second[2].content == "这不是 JSON"  # 回填上一次原始输出
+        assert "找不到 JSON 对象" in second[-1].content  # 回传真实错误，不是泛泛一句
+
+    @pytest.mark.asyncio
     async def test_should_retry_transient_llm_error(self):
         p = FakeProvider([LLMError(LLMErrorKind.RATE_LIMITED, "429"), _payload()])
         gu = await _extract(p)
@@ -219,6 +229,15 @@ class Test解析辅助:
         gu = await _extract(p)
         assert gu.nodes == []
         assert gu.categories == ["未分类"]
+
+    @pytest.mark.asyncio
+    async def test_tolerates_knowledge_points_key(self):
+        """真实 LLM 会把顶层键写成 knowledge_points（提示词已修，这里兜底容错）。"""
+        body = {"categories": ["上海概况"], "knowledge_points": [_node()]}
+        p = FakeProvider([json.dumps(body, ensure_ascii=False)])
+        gu = await _extract(p)
+        assert len(gu.nodes) == 1
+        assert gu.nodes[0].name == "水网"
 
 
 class Test图节点序列化:

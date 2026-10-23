@@ -28,8 +28,11 @@ server/var/
 !server/var/.gitkeep
 # 测试用的 data_dir，测试跑完会留分片残留
 server/var_test/
-data/
-storage/
+# 裸模式 data/ storage/ backup/ 会匹配**任意层级**同名目录（无前导 / 就不锚定根），
+# 曾把 server/app/storage/ 整个源码模块静默排除出版本库。运行时数据实际都在
+# server/var/（上面已覆盖），这里只兜仓库根一层，故必须加前导 / 锚定。
+/data/
+/storage/
 *.db
 *.db-journal
 *.db-wal
@@ -47,7 +50,7 @@ server/fixtures/*.json
 !server/fixtures/README.md
 
 # ---- 备份产物 ----
-backup/
+/backup/
 *.sql
 *.sql.gz
 

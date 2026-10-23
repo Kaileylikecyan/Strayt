@@ -422,3 +422,109 @@ class TestParseError:
         with pytest.raises(ParseError) as ei:
             PdfParser().parse(Path("不存在.pdf"))
         assert ei.value.kind == "no_parser"
+
+
+# --------------------------------------------------------------------------
+# ① 纯文本提取（.txt / .md）+ 解析器分发
+# --------------------------------------------------------------------------
+class TestTxtParser:
+    def _write(self, tmp_path: Path, text: str, name: str = "a.txt", enc: str = "utf-8") -> Path:
+        p = tmp_path / name
+        p.write_bytes(text.encode(enc))
+        return p
+
+    def test_按空行切段(self, tmp_path):
+        from app.parse.txt import TxtParser
+
+        p = self._write(tmp_path, "第一段\n换行\n\n第二段\n\n\n第三段\n")
+        doc = TxtParser().parse(p)
+        assert [b.text for b in doc.blocks] == ["第一段\n换行", "第二段", "第三段"]
+        assert doc.channel == "text"
+        assert all(b.page == 0 for b in doc.blocks)
+
+    def test_认带BOM的UTF8(self, tmp_path):
+        from app.parse.txt import TxtParser
+
+        p = self._write(tmp_path, "你好世界", enc="utf-8-sig")
+        assert TxtParser().parse(p).raw_text() == "你好世界"
+
+    def test_GB18030兜底(self, tmp_path):
+        from app.parse.txt import TxtParser
+
+        p = self._write(tmp_path, "导游业务：华东地区", enc="gb18030")
+        assert TxtParser().parse(p).raw_text() == "导游业务：华东地区"
+
+    def test_标注中文比例(self, tmp_path):
+        from app.parse.txt import TxtParser
+
+        p = self._write(tmp_path, "纯中文的一段\n\nHello world only english")
+        doc = TxtParser().parse(p)
+        assert doc.blocks[0].zh_ratio > 0.9
+        assert doc.blocks[1].zh_ratio < 0.1
+
+    def test_空文件报错(self, tmp_path):
+        from app.parse.txt import TxtParser
+
+        p = self._write(tmp_path, "   \n\n  \n")
+        with pytest.raises(ParseError) as ei:
+            TxtParser().parse(p)
+        assert ei.value.kind == "empty"
+
+    def test_缺文件(self):
+        from app.parse.txt import TxtParser
+
+        with pytest.raises(ParseError) as ei:
+            TxtParser().parse(Path("不存在.txt"))
+        assert ei.value.kind == "no_parser"
+
+
+class TestParseDocumentDispatch:
+    def test_按扩展名选txt(self, tmp_path):
+        from app.parse import parse_document
+
+        p = tmp_path / "a.md"
+        p.write_bytes("标题\n\n正文".encode())
+        assert parse_document(p).raw_text() == "标题\n正文"
+
+    def test_无解析器报no_parser(self, tmp_path):
+        from app.parse import parse_document
+
+        with pytest.raises(ParseError) as ei:
+            parse_document(tmp_path / "a.docx")
+        assert ei.value.kind == "no_parser"
+
+
+# --------------------------------------------------------------------------
+# 图谱分节切单元
+# --------------------------------------------------------------------------
+class TestGraphUnits:
+    def test_按分节标题切(self):
+        from app.jobs.engine import _graph_units
+
+        text = "===== 图A =====\n内容甲\n\n===== 图B =====\n内容乙\n"
+        units = _graph_units(text, "fallback")
+        assert [u.title for u in units] == ["图A", "图B"]
+        assert [u.zh for u in units] == ["内容甲", "内容乙"]
+        assert [u.index for u in units] == [0, 1]
+
+    def test_无标题整篇一单元(self):
+        from app.jobs.engine import _graph_units
+
+        units = _graph_units("没有分节的正文\n第二行", "daotu")
+        assert len(units) == 1
+        assert units[0].title == "daotu"
+        assert units[0].zh == "没有分节的正文\n第二行"
+
+    def test_空节跳过且index稠密(self):
+        from app.jobs.engine import _graph_units
+
+        text = "===== A =====\n\n===== B =====\n有内容\n===== C =====\n\n"
+        units = _graph_units(text, "x")
+        assert [u.title for u in units] == ["B"]
+        assert units[0].index == 0
+
+    def test_标题两侧空白去掉(self):
+        from app.jobs.engine import _graph_units
+
+        units = _graph_units("=====  图 A  =====\n正文\n", "x")
+        assert units[0].title == "图 A"

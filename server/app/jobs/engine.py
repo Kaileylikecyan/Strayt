@@ -20,8 +20,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -35,8 +37,8 @@ from app.db.session import SessionLocal
 from app.llm.base import Usage
 from app.llm.pricing import estimate_cost
 from app.parse import blocks as B
+from app.parse import parse_document
 from app.parse.base import ParseError
-from app.parse.pdf import PdfParser
 from app.persist import SaveOutcome, SaveResult, save_piece
 from app.storage.local import get_storage
 
@@ -156,9 +158,9 @@ def build_plan(db: Session, file_row: File) -> Plan:
     顺带写一条 ``file_parses``：文档要求原文抽取结果可复查（② 的清洗规则以后
     会改，得能重跑对比）。``tokens_used`` 留 0 —— 解析本身不调模型。
 
-    ``parse_channel`` 只有 ``text`` / ``vision`` 两种：``text`` 表示 PDF 有文本层，
-    直接抽取；``vision`` 表示扫描件，必须走视觉 OCR，一期未实现，明确报错而不是
-    静默产出 0 篇。
+    ``parse_channel`` 只有 ``text`` / ``vision`` 两种：``text`` 表示有文本层
+    （PDF 文本层 / 纯文本 ``.txt`` ``.md``），直接抽取；``vision`` 表示扫描件，
+    必须走视觉 OCR，一期未实现，明确报错而不是静默产出 0 篇。
     """
     # 先看通道再看磁盘：扫描件没配 OCR 是"设置错了"，报这个比报"文件不在磁盘"
     # 更有指向性，用户一看就知道该去改设置而不是重传文件。
@@ -171,8 +173,7 @@ def build_plan(db: Session, file_row: File) -> Plan:
     if not path.exists():
         raise FileNotFoundError(f"文件不在磁盘上：{file_row.server_path}")
 
-    parser = PdfParser()
-    doc = parser.parse(path)
+    doc = parse_document(path)
     db.add(
         FileParse(
             file_id=file_row.id,
@@ -182,28 +183,62 @@ def build_plan(db: Session, file_row: File) -> Plan:
             pages_json=doc.to_pages_json(),
             # 每次运行都留一行，便于规则改版后重跑对比（②的清洗规则会改）。
             # 靠 parser_version 区分是哪一版规则产出的，否则这些行无法分辨。
-            parser_version=parser.version,
+            parser_version=doc.parser_version,
         )
     )
     db.flush()
 
-    pieces = B.to_pieces(B.scan(doc.blocks))
-    units = [
-        Unit(
-            index=i,
-            title=p.title,
-            zh=p.zh,
-            en=p.en,
-            page=p.page,
-            zh_page=p.zh_page,
-            en_page=p.en_page,
-            zh_blocks=p.zh_blocks,
-        )
-        for i, p in enumerate(pieces)
-    ]
+    # 图谱项目不切「篇目」——它是按文件/分节整块抽取知识点的，直接每节一个单元。
+    # 背诵项目才需要 ③ 结构识别把版面切成中英配对的篇目。
+    project = db.get(Project, file_row.project_id)
+    if project is not None and project.type == "graph":
+        units = _graph_units(doc.raw_text(), Path(file_row.orig_name).stem)
+    else:
+        pieces = B.to_pieces(B.scan(doc.blocks))
+        units = [
+            Unit(
+                index=i,
+                title=p.title,
+                zh=p.zh,
+                en=p.en,
+                page=p.page,
+                zh_page=p.zh_page,
+                en_page=p.en_page,
+                zh_blocks=p.zh_blocks,
+            )
+            for i, p in enumerate(pieces)
+        ]
     if not units:
         raise ParseError("no_pieces", "结构识别没有切出任何篇目，检查版面规则是否匹配该资料")
     return Plan(file_id=file_row.id, units=units)
+
+
+#: 图谱文本的分节标题：``===== 标题 =====``（等号数量 ≥3）。
+_GRAPH_HEADING = re.compile(r"^={3,}\s*(.*?)\s*={3,}\s*$", re.MULTILINE)
+
+
+def _graph_units(text: str, default_title: str) -> list[Unit]:
+    """图谱项目：按 ``===== 标题 =====`` 分节，每节一个加工单元。
+
+    图谱是「一篇 → 一次 LLM 调用 → 合并入库」，节标题既当单元标题（同时供
+    F12 按标题/文件名匹配分类规则），又控制单次 prompt 规模。没有分节标题时
+    整篇作一个单元 —— 单文件单任务的最小可用形态。
+    """
+    spans = list(_GRAPH_HEADING.finditer(text))
+    units: list[Unit] = []
+    if not spans:
+        body = text.strip()
+        if body:
+            units.append(Unit(index=0, title=default_title, zh=body, en="", page=0))
+        return units
+    for i, m in enumerate(spans):
+        end = spans[i + 1].start() if i + 1 < len(spans) else len(text)
+        body = text[m.end() : end].strip()
+        if not body:
+            continue
+        title = m.group(1).strip() or f"片段{len(units) + 1}"
+        units.append(Unit(index=len(units), title=title, zh=body, en="", page=0))
+    return units
 
 
 # ==========================================================================

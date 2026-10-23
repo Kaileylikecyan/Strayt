@@ -17,15 +17,16 @@
 > （直传/分块续传）、加工任务（创建/轮询/取消/续跑/成本熔断展示）、**背诵舱（按句/按段粒度 + 三档模式 + 递进计时器）** + 手动改句、
 > 图谱（预览确认 / 图谱视图 / 闪卡 / 掌握度）、打卡热力、设置（API Key/模型档案/导出）、
 > 弱同步引擎 10 个单测。
-> **Tauri 桌面端（`apps/desktop`）仍空**：Rust/cargo 与 MSVC Build Tools 未装，
-> 等工具链补齐再接（共享包已就绪，补 UI 即可）。
+> **Tauri 桌面端（`apps/desktop`）已出 exe 并实测启动**（见缺口 1）：页面与网页端**同源**
+> （`src/main.tsx` import `@strayt/web/App`，vite alias 指到 `apps/web/src`），改网页端桌面端自动同步。
+> 唯一遗留是 MSI/NSIS 安装包（`tauri build` 要从 GitHub 下 WiX 工具链，网络时断时续）。
 >
 > **背景**：初始迁移已经把图谱型的 `categories` / `nodes` / `edges` / `card_quotes` /
 > `flashcards` 五张表建好，`plans` / `goals` / `checkins` 也有表和写入通道；
-> 图谱服务端（抽取/合并/入库/接口）与网页端视图均已实现，唯一缺口是真实文档的
-> 端到端验证（需配置 LLM Key）。
+> 图谱服务端（抽取/合并/入库/接口）与网页端视图均已实现，**并已用真实 LLM 跑通
+> 「文本 → 抽取 → 草稿 → 确认入库」端到端**（文本桥接路径，见缺口 2）。
 
-## 测试分布（`server/tests/`，共 525 个测试）
+## 测试分布（`server/tests/`，共 564 个测试）
 
 > 数字取自 `uv run pytest --collect-only -q`，别手改 —— 改完跑一次刷新。
 
@@ -39,19 +40,22 @@
 | `test_category_rules.py` | 22 | F12 分类规则 CRUD、优先级语义、非法正则挡回 |
 | `test_export.py` | 3 | 全量快照导出（口令哈希必须被剔除） |
 | `test_files.py` | 7 | 上传与文件管理（含跨项目同内容去重） |
-| `test_jobs.py` | 52 | 任务引擎、checkpoint、取消、续跑 |
+| `test_jobs.py` | 58 | 任务引擎、checkpoint、取消、续跑 |
 | `test_llm.py` | 41 | 12 家 provider、牌价、自定义端点不可覆盖固定地址 |
-| `test_pairs_edit.py` | 8 | F18 拆分/合并、`loc_page` 继承、`seq` 稠密唯一 |
-| `test_parse.py` | 45 | ①~⑤ 解析管线 |
-| `test_persist.py` | 19 | ⑧ 入库、拒收、人工微调保护 |
+| `test_pairs_edit.py` | 12 | F18 拆分/合并、`loc_page` 继承、`seq` 稠密唯一 |
+| `test_parse.py` | 70 | ①~⑤ 解析管线 + 纯文本解析器（`.txt`/`.md`）与解析器分发 |
+| `test_persist.py` | 21 | ⑧ 入库、拒收、人工微调保护 |
 | `test_plans.py` | 6 | 计划读取聚合 |
 | `test_projects.py` | 5 | 项目 CRUD、目标 |
 | `test_settings_api.py` | 19 | Provider 契约、自定义端点边界、KV 不得改写口令哈希 |
 | `test_sync.py` | 11 | 弱同步批量重放、冲突裁决、`pair_key` 寻址、带时区 `client_ts` |
-| 图谱族（`test_graph_*.py`、`test_api_graph.py`、`test_api_mastery.py`、`test_api_flashcards.py`） | 86 | 抽取/合并/入库/掌握度/闪卡 |
+| 图谱族（`test_graph_*.py`、`test_api_graph.py`、`test_api_mastery.py`、`test_api_flashcards.py`） | 88 | 抽取/合并/入库/掌握度/闪卡 |
 
 真实数据验证：
 - `server/var_test/quality_e2e.py`（⑥⑦，12 篇 / 634 对）、`server/var_test/job_e2e.py`（③④⑤⑥⑦⑧ + 任务引擎，6 场景）—— 进程内跑引擎。
+- `server/var_test/graph_image_e2e.py`（**图谱真实链路**，调真 LLM）—— 把 `地导导图` 思维导图经本地 OCR 合并成的
+  `daotu.txt` 取前 N 节，走**纯文本解析器 + 图谱分节单元**，真跑一次 `GraphEngine` 抽取 → 预览确认入库，
+  断言 nodes/categories/edges/引文都落表。用独立库 `strayt_test`，跑完清理（见缺口 2）。
 - `scripts/smoke_http.py`（**协议面**）—— 对着跑着的服务端走客户端那条路：鉴权 → bootstrap →
   上传 → 建任务 → 轮询到 `success` → 校验篇目/对句/`loc_page` → F18 `pair_edit`（`pair_key` 寻址）
   → 旧 `client_ts` 重放判 `conflict` → F18 `split`/`merge`（行数守恒、`seq` 稠密唯一、`loc_page` 继承、
@@ -104,7 +108,7 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
 
 | ID | 需求 | 状态 | 实现 | 测试 |
 |---|---|---|---|---|
-| F11 | 图谱加工：解析 → LLM 抽取 → 预览确认 → 入库 | 🟡 | **服务端已完成**：`app/graph/extract.py`（Agent 抽取）→ `merge.py`（跨篇合并）→ 草稿落 `jobs.results_json` → `POST /jobs/{id}/graph-confirm` 确认后 `persist.py` 原子入库（同事务擦除重建）；`GET /projects/{id}/graph` 全量取图；**客户端 `apps/web` GraphPage「图谱」tab**：最近成功 `graph_extract` 任务的草稿预览（删节点 / 调分类 / 改名 / 改概要）→ `graph-confirm` 提交 | `test_graph_extract.py`、`test_graph_merge.py`、`test_graph_persist.py`、`test_graph_jobs.py`、`test_api_graph.py` |
+| F11 | 图谱加工：解析 → LLM 抽取 → 预览确认 → 入库 | 🟡 | **服务端已完成**：`app/graph/extract.py`（Agent 抽取）→ `merge.py`（跨篇合并）→ 草稿落 `jobs.results_json` → `POST /jobs/{id}/graph-confirm` 确认后 `persist.py` 原子入库（同事务擦除重建）；`GET /projects/{id}/graph` 全量取图；**客户端 `apps/web` GraphPage「图谱」tab**：最近成功 `graph_extract` 任务的草稿预览（删节点 / 调分类 / 改名 / 改概要）→ `graph-confirm` 提交 | `test_graph_extract.py`、`test_graph_merge.py`、`test_graph_persist.py`、`test_graph_jobs.py`、`test_api_graph.py`；真实 LLM 端到端见 `var_test/graph_image_e2e.py`（缺口 2） |
 | F12 | 一级分类（LLM 划分 / 自定义规则 / 手动调整） | ✅ | 抽取 prompt 内建分类划分 + `merge.py` 跨篇同名折叠；多余空分类自动修剪；**自定义规则**：`category_rules` 表 + 迁移，`app/graph/classify.py` 按「文件名 / 篇章标题 × 前缀 / 包含 / 正则」匹配，入库前（`jobs/graph.py::_finish` → `merge_units`）取**第一条命中**整篇归类，未命中保持 LLM 原判；CRUD `GET`/`PUT /projects/{id}/category-rules`（`PUT` 整表覆盖，**数组下标即优先级**，落库为 `priority` 列 —— 早期版本按随机 `id` 升序排，语义上是错的，见迁移 `d4f1a8b6c207`），入口拒空白 pattern / 非法正则；**手动调整**：预览里 `apply_edits` 的 `reassign` 下拉 + 图谱视图**拖节点换列**（`node_category` 弱同步写实体，含跨项目分类挡回） | `test_category_rules.py`、`test_graph_merge.py`、`scripts/smoke_http.py --graph` |
 | F13 | 图谱视图（分区着色、搜索高亮、掌握度三色） | 🟡 | 数据（节点/边/掌握度）随 `GET /projects/{id}/graph` 返回；客户端 `apps/web` GraphPage：按一级分类分列、列头/SVG 元素取 `categoryCssVar` 调色板、搜索高亮（`focusOutline`）、掌握度三色描边 + 左侧色条（`masteryNo/Mid/Yes` token）、点击节点抽屉看概要/出处/改掌握度 | — |
 | F14 | 知识卡片（概要 + 摘录 + 出处回看） | 🟡 | 卡片数据（`summary`/`quote` 含 `file_id`+`loc_page`+`para`）已随 graph API 返回；**卡片渲染与出处回看（二期）为客户端**（节点抽屉已展示概要 + 摘录 + 页码） | `test_graph_persist.py` |
@@ -205,11 +209,33 @@ client_ts 偏移、按时间排序重放、LWW 冲突移除、error 保留、分
       所以自动化测试填不进去。现在改为**口令**：库中无口令时 Setup 页直接创建，之后输口令登录
       （ADR-0009）。口令同样只存 Argon2id 哈希，但创建/登录这条 HTTP 路径本身可自动化，
       `scripts/smoke_http.py` 已改为走 `/auth/login` 换会话。
-2. **图谱型管线服务端已完成，客户端非空但缺真实数据验证** —— F11~F16 的服务端抽取/合并/入库/接口
-   （`app/graph/`、`app/jobs/graph.py`、`app/api/routers/graph.py`）已就绪；网页端 GraphPage「图谱」tab
-   已实现预览确认、图谱视图（双主题调色板 F13）、闪卡自测（F15）、掌握度统计（F16），空态/契约形状已
-   用临时图谱项目核对（`GET /graph`、/mastery-stats、/flashcards、generate）。**受无 LLM Key 限制，
-   未用真实文档跑通抽取 → 草稿 → 确认的端到端链路**（配置 Key 后可用 `scripts/smoke_http.py` 扩展）。
+2. ~~图谱型管线服务端已完成，客户端非空但缺真实数据验证~~ —— **已用真实 LLM 跑通文本桥接路径**。
+   起因：`地导导图` 的 41 张思维导图（PNG）想变成知识图谱，但服务端只认 PDF，且视觉通道
+   一期 `NotImplementedError`。故走「本地 OCR → 合并 txt → 走图谱文本链路」的桥接：
+   - **服务端新增纯文本解析**：`app/parse/txt.py`（`TxtParser`，`.txt`/`.md`，认 BOM，GB18030 兜底）
+     + `app/parse/__init__.py::parse_document`（按扩展名分发，取代 `build_plan` 里写死的 `PdfParser`）；
+   - **图谱按分节切单元**：`app/jobs/engine.py::_graph_units` 按 `===== 标题 =====` 分节，
+     每节一个加工单元（标题同时供 F12 按标题/文件名匹配分类规则）；图谱项目不再走「中英篇目」结构扫描；
+   - **修掉一个真 bug（只在真实 LLM 上暴露）**：抽取 `_SYSTEM` 提示词从未写明顶层 JSON 键叫 `nodes`，
+     deepseek 一律返回 `knowledge_points`，校验器 `data.get("nodes")` 永远取空 → **真模型上图谱必空**。
+     已把 `nodes`/`categories` 的完整 JSON 骨架写进提示词，并在 `_validate` 兜底容错 `knowledge_points` 等别名；
+   - **验证**：`var_test/graph_image_e2e.py` 用真 deepseek 跑通：前 3 节（57 节点 / 3 分类 /
+     32 关联 / 57 引文，¥0.05）与**全量 41 节跑过两遍**（第一遍 639 节点 / 40 分类 / 476 关联 /
+     134k token / ¥0.79；第二遍 653 节点 / 40 分类 / 500 关联 / ¥0.82）。两遍都是 `success` +
+     **40/41 单元**，失败的那节**每次都不一样**，属 LLM 抽取随机性 + 桥接 OCR 版面损失：引擎按设计
+     记进 `failed_units`、标 `retryable`，续跑可重试，不拖垮整任务。
+   - **第二遍暴露的是输入侧问题，不是管线 bug**：`相关岛屿及面积` 那节是**三栏表格**，本地 OCR
+     把三列拍平成一列（岛名与面积分行、中间隔着别的岛名），模型凑不出一段**在原文中连续存在**的
+     逐字引文 → 三个节点引文全部对不上原文被弃 → 该节 `graph_empty`。这正是 §6.8 所说「桥接 OCR
+     质量一般」的具体体现；引文门控（逐字回原文核对）是**故意**的防编造闸，不为过它而放水。
+   - **修掉的第二个真 bug（全量 41 节才暴露，`app/graph/extract.py`）**：OCR 材料里混进**孤立的
+     英文半角引号**，模型照抄进 `quote` 字段却不转义 → 坏 JSON。而重试只回传一句泛泛的「不是合法
+     对象」、**且不回填上一次输出**，模型看不到自己错在哪，两次都在同一位炸（文档说会「把上次的
+     错误一起告诉模型」，实际没做到 —— 死代码）。已改为：回传**真实解析错误** + 把上一次输出作为
+     `assistant` 轮回填 + 提示词明确要求半角双引号转义。修后单跑原本唯一失败的那节，一次通过
+     （10 节点 / ¥0.013）。
+   - **仍属未来**（本期不做，见 §6.8）：扫描件**视觉 OCR 通道**（`parse_channel="vision"` 仍 `NotImplementedError`）；
+     本次桥接的 OCR 在服务端之外（Windows 内置 OCR，质量一般），只解决「导图 → 文本」的输入问题。
 3. ~~F18 只做了一半~~ —— 已补齐：服务端 `POST /pieces/{id}/pairs/split` 与 `/merge`
    （F12/F18 本轮一起做的），客户端 RecitePage 拖拽排序 + 拆分/合并弹窗。
    桌面端因与网页端同源（见缺口 1）自动就有了这套 UI。

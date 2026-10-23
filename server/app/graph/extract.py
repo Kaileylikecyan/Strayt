@@ -53,6 +53,23 @@ MAX_RETRIES = 1
 _SYSTEM = """你是知识图谱抽取器。用户给你某学习材料的一篇正文（中文为主），\
 你的唯一任务是从这篇正文里抽取知识点，并建立知识点之间的关联。
 
+只输出一个 JSON 对象，**顶层键名必须恰好是 categories 和 nodes**（不要改成 \
+knowledge_points 等别的名字，不要增删顶层键）：
+
+{
+  "categories": ["本篇章/节名"],
+  "nodes": [
+    {
+      "name": "知识点名",
+      "category_index": 0,
+      "weight": 2,
+      "summary": "用 1~2 句概括，仅基于材料原文",
+      "quote": "材料里逐字照抄的原句（含标点）",
+      "links": [{"index": 1, "reason": "为什么与第 1 个知识点相关（来自材料）"}]
+    }
+  ]
+}
+
 硬性要求：
 1. 只使用给定材料的内容。材料里没有的信息一律不写；不确定宁可少抽也不要编造。
 2. 每个知识点：
@@ -66,7 +83,9 @@ _SYSTEM = """你是知识图谱抽取器。用户给你某学习材料的一篇�
 每一条给一个 reason（依据，一句话说明为什么相关，也必须来自材料上下文）。
 3. categories 数组：一篇正文通常正好 1 个分类（本篇的章/节名）；只有材料在本篇内\
 确实有可明确划分的子主题时，才可以给出多个。数组内名称必须唯一。
-4. 只输出 JSON，不要任何解释、前言或代码块以外的文字。"""
+4. JSON 字符串内的引号等特殊字符要正确转义：**引文里若出现英文半角双引号 " ，在 JSON \
+里必须写成 \\"**（材料原文经 OCR 常有这种残缺引号，直接照抄会把 JSON 打坏）；不要写 \
+注释、尾随逗号，不要任何解释、前言或代码块以外的文字。"""
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.S)
 
@@ -206,35 +225,45 @@ class GraphExtractor:
 
     # -- 调用与重试 -------------------------------------------------------
     async def _ask_model(self, prompt: str, spent: _Spend) -> ChatResult:
-        last: str | None = None
+        last_error: str | None = None
+        last_text: str | None = None
         for attempt in range(self.max_retries + 1):
             msgs = [ChatMessage.system(_SYSTEM), ChatMessage.user(prompt)]
-            if last is not None:
-                msgs.append(
-                    ChatMessage.user(
-                        f"上一次输出无法解析（{last}）。请重新输出，只输出 JSON，不要任何其他文字。"
+            # 重问时把**上一次的原始输出**作为 assistant 轮回填，模型才知道自己错在哪。
+            # 只给错误文字、不给它上次写了什么，模型会原样再错一遍（真机上复现过：
+            # 材料里的英文半角引号没转义，重试两次都在同一位炸）。
+            if last_text is not None:
+                msgs.append(ChatMessage(role="assistant", content=last_text))
+            if last_error is not None:
+                if last_text is not None:
+                    hint = (
+                        f"上一次输出无法解析（{last_error}）。请只输出 JSON 对象；"
+                        '字符串里的英文半角双引号必须转义成 \\"，或改用中文引号“”。'
                     )
-                )
+                else:
+                    hint = f"上一次调用失败（{last_error}），请重试，只输出 JSON 对象。"
+                msgs.append(ChatMessage.user(hint))
             try:
                 res = await self.provider.chat(msgs)
             except LLMError as exc:
                 transient = exc.kind in ("rate_limited", "provider_error", "network")
                 if transient and attempt < self.max_retries:
-                    last = f"{exc.kind}: {exc.detail}"
+                    last_error = f"{exc.kind}: {exc.detail}"
                     continue
                 raise
             spent.add(res.usage)
-            # 解析失败是格式问题：把错误回传给模型，通常一次就能修好。
+            # 解析失败是格式问题：把**真实错误**连同上次输出回给模型，通常一次就能修好。
             # 解析和重试必须在同一个循环里，否则这条路径就是死代码。
             try:
                 parse_json(res.text)
-            except GraphError:
+            except GraphError as exc:
                 if attempt >= self.max_retries:
                     raise
-                last = "JSON 不是合法对象"
+                last_error = exc.message
+                last_text = res.text
                 continue
             return res
-        raise GraphError("llm_failed", f"重试 {self.max_retries} 次仍失败：{last}")
+        raise GraphError("llm_failed", f"重试 {self.max_retries} 次仍失败：{last_error}")
 
     def _check_budget(self, prompt: str) -> None:
         """F8：超预估上限就中断，不烧额度。"""
@@ -305,7 +334,14 @@ def _validate(data: dict, *, title: str, loc_page: int, source: str, usage: Usag
 
     raw_nodes = data.get("nodes")
     if not isinstance(raw_nodes, list):
-        raw_nodes = []
+        # 兜底：模型偶尔把顶层键写成别的名字（真实 LLM 上撞到过 knowledge_points）。
+        # 提示词已明确要求 nodes，这里再容错一次，别白跑一篇。
+        for alt in ("knowledge_points", "knowledgePoints", "points", "items"):
+            if isinstance(data.get(alt), list):
+                raw_nodes = data[alt]
+                break
+        else:
+            raw_nodes = []
     # 第一遍：建「可用节点」。links 引的是**模型给的原始序号**，而节点经过丢弃后
     # 序号会变 —— 所以先把每个可用节点的原始下标记下来，第二遍按 raw→final 映射
     # 翻译关联，落到被丢弃节点上的关联一并丢弃。
